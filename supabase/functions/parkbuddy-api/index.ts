@@ -107,6 +107,67 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  if (action === 'snapshot' && req.method === 'POST') {
+    try {
+      const { data: latestRows, error: latestError } = await db
+        .from('parking_snapshots')
+        .select('captured_at')
+        .order('captured_at', { ascending: false })
+        .limit(1)
+
+      if (latestError) return json({ error: latestError.message }, 500)
+
+      const latestAt = latestRows?.[0]?.captured_at ? new Date(latestRows[0].captured_at).getTime() : 0
+      if (latestAt && Date.now() - latestAt < 4 * 60 * 1000) {
+        return json({ ok: true, skipped: true, reason: 'Snapshot captured recently' })
+      }
+
+      const live = await fetchOfficialParking(db)
+      const rows = (live.parkings || [])
+        .filter((p: any) => p.free_spaces != null && p.capacity != null)
+        .map((p: any) => ({
+          parking_id: p.id,
+          captured_at: new Date().toISOString(),
+          free_spaces: p.free_spaces,
+          capacity: p.capacity,
+          occupancy_percent: p.occupancy_percent,
+          source: 'ZDM Warszawa'
+        }))
+
+      if (!rows.length) {
+        return json({ ok: false, inserted: 0, reason: 'No verified live values available' }, 503)
+      }
+
+      const { error: insertError } = await db.from('parking_snapshots').insert(rows)
+      if (insertError) return json({ error: insertError.message }, 500)
+
+      return json({
+        ok: true,
+        inserted: rows.length,
+        captured_at: rows[0].captured_at,
+        parking_ids: rows.map((r: any) => r.parking_id)
+      })
+    } catch (error) {
+      return json({ error: String(error) }, 500)
+    }
+  }
+
+  if (action === 'history' && req.method === 'GET') {
+    const parkingId = url.searchParams.get('parking_id') || ''
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 48), 1), 288)
+    if (!parkingId) return json({ error: 'parking_id required' }, 400)
+
+    const { data, error } = await db
+      .from('parking_snapshots')
+      .select('parking_id,captured_at,free_spaces,capacity,occupancy_percent,source')
+      .eq('parking_id', parkingId)
+      .order('captured_at', { ascending: false })
+      .limit(limit)
+
+    if (error) return json({ error: error.message }, 500)
+    return json({ parking_id: parkingId, count: data?.length || 0, snapshots: data || [] })
+  }
+
   if (action === 'prediction' && req.method === 'GET') {
     return json({
       available: false,
