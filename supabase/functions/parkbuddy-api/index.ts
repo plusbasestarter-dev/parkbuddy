@@ -169,7 +169,98 @@ Deno.serve(async (req: Request) => {
 
   if (action === 'official-parking' && req.method === 'GET') {
     try {
-      return json(await fetchOfficialParking(db))
+      const cityId = url.searchParams.get('city_id')
+      if (!cityId || cityId === 'warszawa') return json(await fetchOfficialParking(db))
+      const { data, error } = await db.from('parking_locations')
+        .select('id,name,parking_type,currency,price_per_hour,lat,lon,capacity,official_url,data_confidence,source,city_id')
+        .eq('city_id', cityId)
+        .order('name', { ascending: true })
+      if (error) return json({ error: error.message }, 500)
+      return json({ source: 'ParkBuddy city dataset', source_ok: true, fetched_at: new Date().toISOString(), parkings: data || [] })
+    } catch (error) {
+      return json({ error: String(error) }, 500)
+    }
+  }
+
+  if (action === 'sync-osm-baseline' && req.method === 'POST') {
+    const cityId = url.searchParams.get('city_id') || ''
+    if (!cityId) return json({ error: 'city_id required' }, 400)
+
+    const { data: city, error: cityError } = await db.from('cities')
+      .select('id,name,lat,lon,status')
+      .eq('id', cityId)
+      .maybeSingle()
+    if (cityError) return json({ error: cityError.message }, 500)
+    if (!city) return json({ error: 'Unknown city' }, 404)
+
+    const radius = Math.min(Math.max(Number(url.searchParams.get('radius') || 12000), 3000), 20000)
+    const query = '[out:json][timeout:35];(nwr["amenity"="parking"](around:' + radius + ',' + city.lat + ',' + city.lon + '););out center tags;'
+
+    try {
+      const response = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'User-Agent': 'ParkBuddy-Poland/0.2' },
+        body: 'data=' + encodeURIComponent(query)
+      })
+      if (!response.ok) return json({ error: 'Overpass HTTP ' + response.status }, 502)
+      const payload = await response.json()
+      const rows:any[] = []
+
+      for (const e of payload.elements || []) {
+        const t = e.tags || {}
+        const lat = Number(e.lat ?? e.center?.lat)
+        const lon = Number(e.lon ?? e.center?.lon)
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue
+
+        let parkingType = 'surface'
+        if (t.parking === 'underground') parkingType = 'underground'
+        else if (t.parking === 'multi-storey') parkingType = 'multi_storey'
+        else if (t.park_ride === 'yes' || t.park_and_ride === 'yes') parkingType = 'park_and_ride'
+
+        const capacityRaw = String(t.capacity || '').replace(/[^0-9]/g, '')
+        const capacity = capacityRaw ? Number(capacityRaw) : null
+        const name = String(t.name || t.operator || ('Parking ' + e.type + ' ' + e.id)).slice(0, 200)
+
+        rows.push({
+          id: 'OSM_' + e.type + '_' + e.id,
+          city: city.name,
+          country_code: 'PL',
+          city_id: city.id,
+          name,
+          parking_type: parkingType,
+          currency: 'PLN',
+          price_per_hour: null,
+          lat,
+          lon,
+          source: 'OpenStreetMap',
+          source_updated_at: new Date().toISOString(),
+          capacity,
+          official_url: 'https://www.openstreetmap.org/' + e.type + '/' + e.id,
+          data_confidence: 'community'
+        })
+      }
+
+      if (!rows.length) return json({ ok: true, synced: 0, city_id: city.id })
+
+      const chunks = []
+      for (let i=0;i<rows.length;i+=400) chunks.push(rows.slice(i,i+400))
+      for (const chunk of chunks) {
+        const { error } = await db.from('parking_locations').upsert(chunk, { onConflict: 'id' })
+        if (error) return json({ error: error.message }, 500)
+      }
+
+      const { count } = await db.from('parking_locations')
+        .select('id', { count: 'exact', head: true })
+        .eq('city_id', city.id)
+
+      await db.from('cities').update({
+        parking_count: count || rows.length,
+        status: city.id === 'warszawa' ? 'active' : 'baseline',
+        coverage_tier: city.id === 'warszawa' ? 'official' : 'baseline',
+        updated_at: new Date().toISOString()
+      }).eq('id', city.id)
+
+      return json({ ok: true, city_id: city.id, city: city.name, synced: rows.length, total: count || rows.length, source: 'OpenStreetMap' })
     } catch (error) {
       return json({ error: String(error) }, 500)
     }
