@@ -28,7 +28,9 @@
 
 <section id="map" class="screen"><div class="head"><button class="back" onclick="go('home')">‹</button><h2>Warszawa</h2></div><div id="mapbox" class="map"></div><div class="row"><button class="primary" onclick="locate()">KONUMUM</button><button class="outline" onclick="searchPlace()">HEDEF ARA</button></div></section>
 
-<section id="route" class="screen"><div class="head"><button class="back" onclick="go('home')">‹</button><h2>Parka Git</h2></div><div id="routeMap" class="map small"></div><div class="card"><b id="placeName">Hedef</b><p id="routeInfo">Rota bekleniyor.</p></div><button class="primary full" onclick="saveCar()">PARK ETTİM</button></section>
+<section id="choices" class="screen"><div class="head"><button class="back" onclick="go('home')">‹</button><h2>Park Seçenekleri</h2></div><div class="card"><b id="choiceDest">Hedef</b><p>En yakın doğrulanmış resmi park tesisleri.</p></div><div id="nearbyList" class="card"><p>Park seçenekleri yükleniyor…</p></div></section>
+
+<section id="route" class="screen"><div class="head"><button class="back" onclick="go('choices')">‹</button><h2>Parka Git</h2></div><div id="routeMap" class="map small"></div><div class="card"><b id="placeName">Hedef</b><p id="routeInfo">Rota bekleniyor.</p></div><button class="primary full" onclick="saveCar()">PARK ETTİM</button></section>
 
 <section id="car" class="screen"><div class="head"><button class="back" onclick="go('home')">‹</button><h2>Arabam</h2></div><div id="carMap" class="map small"></div><div id="carInfo" class="card">Kayıtlı park konumu yok.</div><button class="primary full" onclick="showCar()">ARABAMI BUL</button></section>
 
@@ -85,7 +87,43 @@ initMap();if(id==='car')initCar()},50)}
 function initMap(){if(map){map.resize();renderOfficialMarkers();return}map=new maplibregl.Map({container:'mapbox',style,center,zoom:12});map.on('load',renderOfficialMarkers)}
 function geo(){return new Promise((ok,no)=>navigator.geolocation.getCurrentPosition(p=>ok([p.coords.longitude,p.coords.latitude]),no,{enableHighAccuracy:true,timeout:10000}))}
 async function locate(){try{pos=await geo();go('map');initMap();const e=document.createElement('div');e.className='me';new maplibregl.Marker({element:e}).setLngLat(pos).addTo(map);map.flyTo({center:pos,zoom:15})}catch{alert('Konum izni gerekli.')}}
-async function searchPlace(){const q=document.getElementById('q').value||'Złote Tarasy Warszawa';const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=pl&q='+encodeURIComponent(q));const a=await r.json();if(!a.length)return alert('Adres bulunamadı');dest={lon:+a[0].lon,lat:+a[0].lat,name:a[0].display_name};await route()}
+async function searchPlace(){
+    const q=document.getElementById('q').value||'Złote Tarasy Warszawa';
+    const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=pl&q='+encodeURIComponent(q));
+    const a=await r.json();
+    if(!a.length)return alert('Adres bulunamadı');
+    dest={lon:+a[0].lon,lat:+a[0].lat,name:a[0].display_name};
+    await loadNearby();
+  }
+
+async function loadNearby(){
+  go('choices');
+  document.getElementById('choiceDest').textContent=dest.name;
+  const list=document.getElementById('nearbyList');
+  list.innerHTML='<p>Park seçenekleri yükleniyor…</p>';
+  try{
+    const r=await fetch(API+'?action=nearby&lat='+dest.lat+'&lon='+dest.lon+'&radius=5000&limit=8');
+    if(!r.ok)throw new Error('API '+r.status);
+    const d=await r.json();
+    if(!d.parkings?.length){list.innerHTML='<p>5 km içinde doğrulanmış resmi otopark bulunamadı.</p>';return}
+    list.innerHTML='<b>EN YAKIN DOĞRULANMIŞ OTOPARKLAR</b>'+d.parkings.map((p,i)=>{
+      const type=p.parking_type==='park_and_ride'?'P+R':(p.parking_type==='municipal'?'Belediye':'Yeraltı');
+      const price=p.price_per_hour!=null?p.price_per_hour+' PLN/saat':'ücret doğrulanmadı';
+      const cap=p.capacity!=null?p.capacity+' kapasite':'kapasite yok';
+      const dist=p.distance_m<1000?p.distance_m+' m':(p.distance_m/1000).toFixed(1)+' km';
+      return '<div class="parkingItem"><div><strong>#'+(i+1)+' '+p.name+'</strong><small>'+type+' · '+dist+' · ~'+p.walk_minutes+' dk yürüme · '+cap+' · '+price+'</small><button class="outline" onclick="selectNearby('+i+')">BURAYA GİT</button></div><div class="free">P<small>RESMİ</small></div></div>'
+    }).join('');
+    window.__nearby=d.parkings;
+  }catch(e){
+    list.innerHTML='<p>Yakındaki otoparklar alınamadı. '+e.message+'</p>';
+  }
+}
+function selectNearby(i){
+  const p=window.__nearby?.[i];if(!p)return;
+  dest={lon:+p.lon,lat:+p.lat,name:p.name};
+  route();
+}
+
 async function route(){if(!pos){try{pos=await geo()}catch{return alert('Rota için konum izni gerekli.')}}const u='https://router.project-osrm.org/route/v1/driving/'+pos[0]+','+pos[1]+';'+dest.lon+','+dest.lat+'?overview=full&geometries=geojson';const r=await fetch(u);const d=await r.json();if(!d.routes?.length)return alert('Rota bulunamadı');go('route');setTimeout(()=>drawRoute(d.routes[0]),100)}
 function drawRoute(r){if(routeMap)routeMap.remove();routeMap=new maplibregl.Map({container:'routeMap',style,center:pos,zoom:13});routeMap.on('load',()=>{routeMap.addSource('r',{type:'geojson',data:{type:'Feature',geometry:r.geometry}});routeMap.addLayer({id:'r',type:'line',source:'r',paint:{'line-color':'#5d86ff','line-width':5}});const b=new maplibregl.LngLatBounds();r.geometry.coordinates.forEach(c=>b.extend(c));routeMap.fitBounds(b,{padding:40});document.getElementById('placeName').textContent=dest.name;document.getElementById('routeInfo').textContent=Math.round(r.duration/60)+' dk · '+(r.distance/1000).toFixed(1)+' km'})}
 async function saveCar(){
