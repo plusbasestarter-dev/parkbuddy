@@ -39,6 +39,107 @@ function scoreParking(p: any, radius: number) {
   }
 }
 
+function parkingTypeFromTags(t: Record<string, any>) {
+  const parking = String(t.parking || '').toLowerCase()
+  if (parking === 'underground') return 'underground'
+  if (parking === 'multi-storey' || parking === 'multistorey') return 'multi_storey'
+  if (t.park_ride === 'yes' || t.park_and_ride === 'yes') return 'park_and_ride'
+  return 'surface'
+}
+
+async function syncOsmBaseline(db: any, cityId: string, radiusParam: number) {
+  const { data: city, error: cityError } = await db.from('cities')
+    .select('id,name,lat,lon,status')
+    .eq('id', cityId)
+    .maybeSingle()
+
+  if (cityError) throw new Error(cityError.message)
+  if (!city) return { error: 'Unknown city', status: 404 }
+
+  const radius = Math.min(Math.max(Number(radiusParam || 12000), 3000), 22000)
+  const query = '[out:json][timeout:35];(nwr["amenity"="parking"](around:' + radius + ',' + city.lat + ',' + city.lon + '););out center tags;'
+
+  const response = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'User-Agent': 'ParkBuddy-Poland/0.3 contact: beta'
+    },
+    body: 'data=' + encodeURIComponent(query)
+  })
+
+  if (!response.ok) throw new Error('Overpass HTTP ' + response.status)
+  const payload = await response.json()
+  const rows: any[] = []
+  const seen = new Set<string>()
+
+  for (const e of payload.elements || []) {
+    const t = e.tags || {}
+    const lat = Number(e.lat ?? e.center?.lat)
+    const lon = Number(e.lon ?? e.center?.lon)
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue
+
+    const access = String(t.access || '').toLowerCase()
+    const parkingTag = String(t.parking || '').toLowerCase()
+    const hasName = Boolean(t.name || t.operator || t.brand)
+    const capacityRaw = String(t.capacity || '').replace(/[^0-9]/g, '')
+    const capacity = capacityRaw ? Number(capacityRaw) : null
+    const structured = ['underground', 'multi-storey', 'multistorey'].includes(parkingTag) || t.park_ride === 'yes' || t.park_and_ride === 'yes'
+    const streetLike = ['street_side', 'lane', 'on_street'].includes(parkingTag)
+    const publicEnough = !['private', 'no', 'customers'].includes(access)
+    const useful = hasName || structured || (capacity != null && capacity >= 10) || t.fee === 'yes'
+
+    if (!publicEnough || streetLike || !useful) continue
+
+    const id = 'OSM_' + e.type + '_' + e.id
+    if (seen.has(id)) continue
+    seen.add(id)
+
+    rows.push({
+      id,
+      city: city.name,
+      country_code: 'PL',
+      city_id: city.id,
+      name: String(t.name || t.operator || t.brand || ('Parking ' + e.type + ' ' + e.id)).slice(0, 200),
+      parking_type: parkingTypeFromTags(t),
+      currency: 'PLN',
+      price_per_hour: null,
+      lat,
+      lon,
+      source: 'OpenStreetMap',
+      source_updated_at: new Date().toISOString(),
+      capacity,
+      official_url: 'https://www.openstreetmap.org/' + e.type + '/' + e.id,
+      data_confidence: 'community'
+    })
+  }
+
+  const { error: deleteError } = await db.from('parking_locations')
+    .delete()
+    .eq('city_id', city.id)
+    .eq('source', 'OpenStreetMap')
+  if (deleteError) throw new Error(deleteError.message)
+
+  for (let i = 0; i < rows.length; i += 400) {
+    const chunk = rows.slice(i, i + 400)
+    const { error } = await db.from('parking_locations').upsert(chunk, { onConflict: 'id' })
+    if (error) throw new Error(error.message)
+  }
+
+  const { count } = await db.from('parking_locations')
+    .select('id', { count: 'exact', head: true })
+    .eq('city_id', city.id)
+
+  await db.from('cities').update({
+    parking_count: count || rows.length,
+    status: city.id === 'warszawa' ? 'active' : 'baseline',
+    coverage_tier: city.id === 'warszawa' ? 'official' : 'baseline',
+    updated_at: new Date().toISOString()
+  }).eq('id', city.id)
+
+  return { ok: true, city_id: city.id, city: city.name, synced: rows.length, total: count || rows.length, source: 'OpenStreetMap' }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
 
@@ -72,7 +173,37 @@ Deno.serve(async (req: Request) => {
       .eq('city_id', cityId)
       .order('name', { ascending: true })
     if (error) return json({ error: error.message }, 500)
-    return json({ source: 'ParkBuddy city dataset', city_id: cityId, source_ok: true, fetched_at: new Date().toISOString(), parkings: data || [] })
+    return json({ city_id: cityId, fetched_at: new Date().toISOString(), parkings: data || [] })
+  }
+
+  if (action === 'sync-osm-baseline' && req.method === 'POST') {
+    try {
+      const cityId = url.searchParams.get('city_id') || ''
+      if (!cityId) return json({ error: 'city_id required' }, 400)
+      const radius = Number(url.searchParams.get('radius') || 12000)
+      const result = await syncOsmBaseline(db, cityId, radius)
+      if ((result as any).status) return json({ error: (result as any).error }, (result as any).status)
+      return json(result)
+    } catch (error) {
+      return json({ error: String(error) }, 500)
+    }
+  }
+
+  if (action === 'sync-next-baseline' && req.method === 'POST') {
+    try {
+      const { data: nextCity, error } = await db.from('cities')
+        .select('id,name')
+        .eq('status', 'planned')
+        .order('name', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (error) return json({ error: error.message }, 500)
+      if (!nextCity) return json({ ok: true, done: true, message: 'No planned cities remain' })
+      const result = await syncOsmBaseline(db, nextCity.id, 12000)
+      return json(result)
+    } catch (error) {
+      return json({ error: String(error) }, 500)
+    }
   }
 
   if (action === 'nearby' && req.method === 'GET') {
@@ -102,7 +233,7 @@ Deno.serve(async (req: Request) => {
       count: rows.length,
       parkings: rows,
       score_version: 'door-to-door-v1',
-      note: 'Score uses verified/community distance, capacity, data confidence and price availability. It does not claim live occupancy.'
+      note: 'Score uses distance, capacity, data confidence and price availability. It does not claim live occupancy.'
     })
   }
 
