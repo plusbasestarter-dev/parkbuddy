@@ -289,6 +289,40 @@ Deno.serve(async (req: Request) => {
     })
   }
 
+  if (action === 'plan' && req.method === 'GET') {
+    const lat = Number(url.searchParams.get('lat'))
+    const lon = Number(url.searchParams.get('lon'))
+    const radius = Math.min(Math.max(Number(url.searchParams.get('radius') || 5000), 500), 15000)
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return json({ error: 'lat and lon are required' }, 400)
+
+    const { data, error } = await db.rpc('nearby_parking', {
+      p_lat: lat, p_lon: lon, p_radius_m: radius, p_limit: 12
+    })
+    if (error) return json({ error: error.message }, 500)
+
+    const scored = (data || []).map((p:any) => {
+      const distance_m = Math.round(Number(p.distance_m || 0))
+      const walk_minutes = Math.max(1, Math.round(distance_m / 80))
+      const capacity = Math.max(0, Number(p.capacity || 0))
+      const proximity = Math.max(0, 1 - distance_m / radius)
+      const capacityNorm = Math.min(capacity / 500, 1)
+      const verified = p.data_confidence === 'verified' ? 1 : 0
+      const priceKnown = p.price_per_hour != null ? 1 : 0
+      const door_to_door_score = Math.round(proximity*55 + capacityNorm*25 + verified*10 + priceKnown*10)
+      return {...p,distance_m,walk_minutes,door_to_door_score,
+        score_basis:{proximity:Math.round(proximity*55),capacity:Math.round(capacityNorm*25),verified:verified*10,price_known:priceKnown*10}}
+    }).sort((a:any,b:any)=>b.door_to_door_score-a.door_to_door_score || a.distance_m-b.distance_m)
+
+    return json({
+      destination:{lat,lon},
+      primary:scored[0] || null,
+      plan_b:scored[1] || null,
+      alternatives:scored.slice(2,6),
+      score_version:'door-to-door-v1',
+      disclaimer:'Score uses verified distance, capacity, data confidence and price availability. It does not claim live occupancy.'
+    })
+  }
+
   if (action === 'prediction' && req.method === 'GET') {
     return json({
       available: false,
