@@ -119,6 +119,7 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
 <section id="choices" class="screen">
   <div class="head"><button class="back" onclick="go('home')">‹</button><div><div class="eyebrow">PARK PLAN</div><h2>En iyi seçenekler</h2></div></div>
   <div class="card flat"><b id="choiceDest">Hedef</b><p>ParkBuddy Score; hedefe mesafe, kapasite ve veri güvenine göre hesaplanır.</p></div>
+  <div id="decisionPlan"></div>
   <div id="nearbyList" class="card flat"><p>Park seçenekleri yükleniyor…</p></div>
 </section>
 
@@ -324,6 +325,7 @@ async function searchPlace(inputId='q'){
 }
 async function loadNearby(){
   go('choices');document.getElementById('choiceDest').textContent=dest.name;
+  loadDecisionPlan();
   const list=document.getElementById('nearbyList');list.innerHTML='<p>Park seçenekleri yükleniyor…</p>';
   try{
     const r=await fetch(API+'?action=nearby&lat='+dest.lat+'&lon='+dest.lon+'&radius=5000&limit=8');
@@ -336,6 +338,35 @@ async function loadNearby(){
       return '<div class="parkingrow"><div><b>#'+(i+1)+' '+p.name+'</b><small>'+typeLabel(p.parking_type)+' · '+dist+' · ~'+p.walk_minutes+' dk yürüme · '+(p.capacity??'—')+' kapasite · '+price+'</small><button class="ghost" onclick="openNearbyDetail('+i+')">DETAY</button></div><div class="scorebox"><div class="score">'+p.decision_score+'</div><small>PARKBUDDY SCORE</small></div></div>'
     }).join('');
   }catch(e){list.innerHTML='<div class="empty">Park seçenekleri alınamadı.</div>'}
+}
+async function loadDecisionPlan(){
+  const box=document.getElementById("decisionPlan");
+  if(!box||!dest)return;
+  box.innerHTML='<div class="card flat"><p>Door-to-Door plan hazırlanıyor…</p></div>';
+  try{
+    const r=await fetch(API+'?action=plan&lat='+dest.lat+'&lon='+dest.lon+'&radius=5000');
+    if(!r.ok)throw new Error('Plan API '+r.status);
+    const d=await r.json();
+    if(!d.primary){box.innerHTML='';return}
+    window.__decisionPlan=d;
+    const card=(p,label,cls)=>{
+      const dist=p.distance_m<1000?p.distance_m+' m':(p.distance_m/1000).toFixed(1)+' km';
+      return '<div class="card '+cls+'"><div class="eyebrow">'+label+'</div><div class="detailhero" style="margin-top:8px"><div><b>'+p.name+'</b><p>'+dist+' · ~'+p.walk_minutes+' dk yürüme · '+(p.capacity??'—')+' kapasite</p></div><div class="scorebox"><div class="score">'+p.door_to_door_score+'</div><small>DOOR-TO-DOOR</small></div></div><button class="ghost" onclick="openPlanDetail(\''+label+'\')">DETAY</button></div>';
+    };
+    box.innerHTML=card(d.primary,'PLAN A','live')+(d.plan_b?card(d.plan_b,'PLAN B','warn'):'');
+  }catch(e){box.innerHTML=''}
+}
+function openPlanDetail(label){
+  const d=window.__decisionPlan;if(!d)return;
+  selectedParking=label==='PLAN A'?d.primary:d.plan_b;
+  if(!selectedParking)return;
+  selectedParking.decision_score=selectedParking.door_to_door_score;
+  selectedParking.score_basis={
+    proximity_points:selectedParking.score_basis.proximity,
+    capacity_points:selectedParking.score_basis.capacity,
+    confidence_points:selectedParking.score_basis.verified+selectedParking.score_basis.price_known
+  };
+  renderDetail();go('detail');
 }
 function openNearbyDetail(i){selectedParking=window.__nearby?.[i];if(!selectedParking)return;renderDetail();go('detail')}
 function openOfficialDetail(id){selectedParking=officialParkings.find(x=>x.id===id);if(!selectedParking)return;renderDetail();go('detail')}
