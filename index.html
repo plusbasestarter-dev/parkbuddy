@@ -39,9 +39,24 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
 .nav button{background:none;border:0;color:#6f8a91;font-size:9px}.nav button strong{display:block;font-size:18px;margin-bottom:4px}.nav button.active{color:var(--mint)}
 .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%) translateY(12px);width:min(390px,calc(100% - 36px));background:#e9fff8;color:#05231a;padding:12px;font-size:12px;font-weight:800;opacity:0;transition:.2s;z-index:60;pointer-events:none}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .empty{padding:20px 0;text-align:center;color:var(--muted)}
+.onboarding{position:fixed;inset:0;background:rgba(2,8,13,.94);z-index:100;display:none;align-items:flex-end;justify-content:center;backdrop-filter:blur(12px)}
+.onboarding.show{display:flex}
+.onboardcard{width:min(430px,100%);background:linear-gradient(180deg,#0a1a24,#061018);border-top:1px solid var(--line);padding:24px 20px calc(24px + env(safe-area-inset-bottom))}
+.onboardicon{width:52px;height:52px;display:grid;place-items:center;border:1px solid var(--mint);color:var(--mint);font-size:24px;margin-bottom:18px}
+.onboarddots{display:flex;gap:6px;margin:18px 0}.onboarddots span{width:24px;height:4px;background:#19333d}.onboarddots span.on{background:var(--mint)}
 </style>
 </head>
 <body>
+<div id="onboarding" class="onboarding">
+  <div class="onboardcard">
+    <div class="onboardicon" id="onboardIcon">⌖</div>
+    <div class="eyebrow" id="onboardEyebrow">PARKBUDDY</div>
+    <h2 id="onboardTitle">Parkı daha akıllı seç.</h2>
+    <p id="onboardText">ParkBuddy resmi Varşova park verilerini karşılaştırıp sana en mantıklı seçenekleri gösterir.</p>
+    <div class="onboarddots"><span id="od1" class="on"></span><span id="od2"></span><span id="od3"></span></div>
+    <button id="onboardNext" class="primary full" onclick="nextOnboarding()">DEVAM</button>
+  </div>
+</div>
 <main class="app">
 <header class="top">
   <div class="brand">PARK<b>BUDDY</b><span class="tag">POLAND</span></div>
@@ -155,6 +170,32 @@ const center=[21.0122,52.2297];
 const mapStyle={version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'}},layers:[{id:'osm',type:'raster',source:'osm'}]};
 let map,routeMap,carMap,pos,dest,selectedParking,currentFilter='all';
 let officialParkings=[],officialMarkers=[];
+let onboardingStep=1;
+const ONBOARDING=[
+  {icon:"⌖",eyebrow:"PARKBUDDY",title:"Parkı daha akıllı seç.",text:"Resmi Varşova park verilerini karşılaştırıp sana en mantıklı seçenekleri gösteriyoruz."},
+  {icon:"◎",eyebrow:"LOCATION",title:"Konum yalnız gerektiğinde.",text:"GPS; yakındaki otoparkları, gerçek rotayı ve aracına dönüşü hesaplamak için kullanılır."},
+  {icon:"✓",eyebrow:"DATA CONFIDENCE",title:"Tahmin uydurmuyoruz.",text:"Canlı veri yoksa bunu açıkça söylüyoruz. ParkBuddy Score ile canlı doluluk tahminini birbirinden ayırıyoruz."}
+];
+function renderOnboarding(){
+  const c=ONBOARDING[onboardingStep-1];
+  document.getElementById("onboardIcon").textContent=c.icon;
+  document.getElementById("onboardEyebrow").textContent=c.eyebrow;
+  document.getElementById("onboardTitle").textContent=c.title;
+  document.getElementById("onboardText").textContent=c.text;
+  [1,2,3].forEach(i=>document.getElementById("od"+i).classList.toggle("on",i===onboardingStep));
+  document.getElementById("onboardNext").textContent=onboardingStep===3?"BAŞLA":"DEVAM";
+}
+function nextOnboarding(){
+  if(onboardingStep<3){onboardingStep++;renderOnboarding();return}
+  localStorage.setItem("parkbuddy_onboarding_done","1");
+  document.getElementById("onboarding").classList.remove("show");
+}
+function maybeShowOnboarding(){
+  if(localStorage.getItem("parkbuddy_onboarding_done")!=="1"){
+    document.getElementById("onboarding").classList.add("show");
+    renderOnboarding();
+  }
+}
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(window.__toast);window.__toast=setTimeout(()=>t.classList.remove('show'),2200)}
 function deviceId(){let id=localStorage.getItem('parkbuddy_device_id');if(!id){id='pb_'+crypto.randomUUID();localStorage.setItem('parkbuddy_device_id',id)}return id}
@@ -324,6 +365,7 @@ async function locateCar(){
 }
 function clearCar(){localStorage.removeItem('parkbuddy_car');renderHomeActivePark(null);initCar();toast('Yerel park kaydı silindi.')}
 
+maybeShowOnboarding();
 loadOfficialParkings();
 loadLatestCar();
 </script>
