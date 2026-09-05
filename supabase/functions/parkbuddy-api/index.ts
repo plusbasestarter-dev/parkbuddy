@@ -227,6 +227,50 @@ Deno.serve(async (req: Request) => {
     return json({ parking_id: parkingId, count: data?.length || 0, snapshots: data || [] })
   }
 
+  if (action === 'nearby' && req.method === 'GET') {
+    const lat = Number(url.searchParams.get('lat'))
+    const lon = Number(url.searchParams.get('lon'))
+    const radius = Math.min(Math.max(Number(url.searchParams.get('radius') || 5000), 250), 15000)
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 8), 1), 20)
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return json({ error: 'lat and lon are required' }, 400)
+    }
+
+    const { data, error } = await db.rpc('nearby_parking', {
+      p_lat: lat,
+      p_lon: lon,
+      p_radius_m: radius,
+      p_limit: limit
+    })
+
+    if (error) return json({ error: error.message }, 500)
+
+    const rows = (data || []).map((p: any) => {
+      const distance_m = Math.round(Number(p.distance_m || 0))
+      const walk_minutes = Math.max(1, Math.round(distance_m / 80))
+      let recommendation = 'nearby'
+      if (p.parking_type === 'park_and_ride') recommendation = 'park_and_ride'
+      if (distance_m <= 700 && Number(p.capacity || 0) >= 80) recommendation = 'strong_candidate'
+
+      return {
+        ...p,
+        distance_m,
+        walk_minutes,
+        recommendation,
+        availability_probability: null
+      }
+    })
+
+    return json({
+      destination: { lat, lon },
+      radius_m: radius,
+      count: rows.length,
+      parkings: rows,
+      note: 'Ranked by verified location distance. Availability probability is intentionally unavailable.'
+    })
+  }
+
   if (action === 'prediction' && req.method === 'GET') {
     return json({
       available: false,
