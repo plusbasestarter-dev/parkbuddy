@@ -81,7 +81,8 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
 
 <section id="home" class="screen active">
   <div class="hero">
-    <div class="eyebrow">WARSAW · BETA</div>
+    <div class="eyebrow" id="coverageLabel">POLAND · MULTI-CITY BETA</div>
+    <select id="citySelect" class="timeinput" style="margin:0 0 10px 0" onchange="changeCity(this.value)"></select>
     <h1 id="homeTitle">Nereye gidiyorsun?</h1>
     <p id="homeSub">Hedefi söyle. ParkBuddy doğrulanmış Varşova otoparklarını karşılaştırıp en mantıklı seçenekleri sıralasın.</p>
     <div class="search"><input id="q" placeholder="Złote Tarasy, Warszawa"><button class="primary" onclick="searchPlace()">→</button></div>
@@ -210,7 +211,9 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
 
 <script>
 const API='https://oespoljjeslpsnhjwsra.supabase.co/functions/v1/parkbuddy-api';
-const center=[21.0122,52.2297];
+let center=[21.0122,52.2297];
+let currentCityId=localStorage.getItem("parkbuddy_city")||"warszawa";
+let cityRegistry=[];
 const mapStyle={version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'}},layers:[{id:'osm',type:'raster',source:'osm'}]};
 let map,routeMap,carMap,pos,dest,selectedParking,currentFilter='all';
 let officialParkings=[],officialMarkers=[];
@@ -319,12 +322,34 @@ function setActiveNav(id){document.querySelectorAll('.nav button').forEach(b=>b.
 function go(id){document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');setActiveNav(id);window.scrollTo(0,0);setTimeout(()=>{if(id==='explore'){initMap();renderOfficialMarkers()}if(id==='car')initCar();if(id==='route')routeMap?.resize()},60)}
 function geo(){return new Promise((ok,no)=>{if(!navigator.geolocation)return no(new Error('Geolocation desteklenmiyor'));navigator.geolocation.getCurrentPosition(p=>ok([p.coords.longitude,p.coords.latitude]),no,{enableHighAccuracy:true,timeout:10000,maximumAge:30000})})}
 
+async function loadCities(){
+  try{
+    const r=await fetch(API+'?action=cities');if(!r.ok)throw new Error();
+    const d=await r.json();cityRegistry=d.cities||[];
+    const sel=document.getElementById("citySelect");
+    if(sel){
+      sel.innerHTML=cityRegistry.map(c=>'<option value="'+c.id+'">'+c.name+(c.status==="active"?" · ACTIVE":" · COMING")+'</option>').join("");
+      sel.value=currentCityId;
+    }
+    const c=cityRegistry.find(x=>x.id===currentCityId)||cityRegistry[0];
+    if(c){center=[+c.lon,+c.lat];document.getElementById("coverageLabel").textContent=c.name.toUpperCase()+' · '+(c.status==="active"?"ACTIVE":"COMING SOON");}
+  }catch{}
+}
+async function changeCity(id){
+  currentCityId=id;localStorage.setItem("parkbuddy_city",id);
+  const c=cityRegistry.find(x=>x.id===id);
+  if(c){center=[+c.lon,+c.lat];document.getElementById("coverageLabel").textContent=c.name.toUpperCase()+' · '+(c.status==="active"?"ACTIVE":"COMING SOON");}
+  officialParkings=[];officialMarkers.forEach(m=>m.remove());officialMarkers=[];
+  if(map){map.jumpTo({center,zoom:11.6})}
+  await loadOfficialParkings();
+  if(c&&c.status!=="active")toast(c.name+" veri entegrasyonu hazırlanıyor.");
+}
 async function loadOfficialParkings(){
   try{
     const r=await fetch(API+'?action=official-parking');
     if(!r.ok)throw new Error('API '+r.status);
     const d=await r.json();
-    officialParkings=d.parkings||[];
+    officialParkings=(d.parkings||[]).filter(p=>(p.city_id||"warszawa")===currentCityId);
     document.getElementById('parkingCount').textContent=officialParkings.length+' tesis';
     renderHomeParkings();
     renderOfficialMarkers();
@@ -384,7 +409,7 @@ async function loadNearby(){
   loadDecisionPlan();
   const list=document.getElementById('nearbyList');list.innerHTML='<p>Park seçenekleri yükleniyor…</p>';
   try{
-    const r=await fetch(API+'?action=nearby&lat='+dest.lat+'&lon='+dest.lon+'&radius=5000&limit=8');
+    const r=await fetch(API+'?action=nearby&lat='+dest.lat+'&lon='+dest.lon+'&radius=5000&limit=8&city_id='+encodeURIComponent(currentCityId));
     if(!r.ok)throw new Error('API '+r.status);
     const d=await r.json();
     const prefs=parkingPrefs();
@@ -415,7 +440,7 @@ async function loadDecisionPlan(){
   if(!box||!dest)return;
   box.innerHTML='<div class="card flat"><p>Door-to-Door plan hazırlanıyor…</p></div>';
   try{
-    const r=await fetch(API+'?action=plan&lat='+dest.lat+'&lon='+dest.lon+'&radius=5000');
+    const r=await fetch(API+'?action=plan&lat='+dest.lat+'&lon='+dest.lon+'&radius=5000&city_id='+encodeURIComponent(currentCityId));
     if(!r.ok)throw new Error('Plan API '+r.status);
     const d=await r.json();
     if(!d.primary){box.innerHTML='';return}
@@ -630,7 +655,7 @@ applyTheme();
 applyLanguage();
 loadParkingPrefs();
 maybeShowOnboarding();
-loadOfficialParkings();
+loadCities().then(loadOfficialParkings);
 loadLatestCar();
 </script>
 </body>
