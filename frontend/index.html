@@ -50,6 +50,11 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
 .confidence{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
 .confidence b:last-child{font-size:20px;color:var(--mint)}
 .insight{border-left:3px solid var(--blue)}
+.arrival{position:fixed;inset:0;background:var(--bg);z-index:90;display:none;max-width:430px;margin:auto;padding:22px}
+.arrival.show{display:block}.arrivaltop{display:flex;justify-content:space-between;align-items:center}
+.arrivaldistance{font-size:64px;font-weight:950;letter-spacing:-3px;margin:34px 0 0}.arrivallabel{color:var(--muted);font-size:11px;font-weight:900;letter-spacing:1px}
+.arrivalname{font-size:25px;font-weight:950;margin:8px 0 18px}.arrivalgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.arrivalmetric{border:1px solid var(--line);background:var(--panel);padding:16px}.arrivalmetric small{color:var(--muted);display:block}.arrivalmetric b{font-size:20px;display:block;margin-top:5px}
+.timeinput{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--white);padding:13px;margin-top:8px}
 .onboarding{position:fixed;inset:0;background:rgba(2,8,13,.94);z-index:100;display:none;align-items:flex-end;justify-content:center;backdrop-filter:blur(12px)}
 .onboarding.show{display:flex}
 .onboardcard{width:min(430px,100%);background:linear-gradient(180deg,#0a1a24,#061018);border-top:1px solid var(--line);padding:24px 20px calc(24px + env(safe-area-inset-bottom))}
@@ -120,6 +125,13 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
   <div class="head"><button class="back" onclick="go('home')">‹</button><div><div class="eyebrow">PARK PLAN</div><h2>En iyi seçenekler</h2></div></div>
   <div class="card flat"><b id="choiceDest">Hedef</b><p>ParkBuddy Score; hedefe mesafe, kapasite ve veri güvenine göre hesaplanır.</p></div>
   <div id="decisionPlan"></div>
+  <div class="card flat">
+    <div class="eyebrow">ARRIVE BY</div>
+    <b>Kaçta orada olmalısın?</b>
+    <input id="arriveByTime" class="timeinput" type="time">
+    <button class="ghost full" style="margin-top:8px" onclick="calculateLeaveTime()">ÇIKIŞ ZAMANINI HESAPLA</button>
+    <p id="leaveTimeResult"></p>
+  </div>
   <div id="nearbyList" class="card flat"><p>Park seçenekleri yükleniyor…</p></div>
 </section>
 
@@ -177,6 +189,18 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
   <button id="nav-profile" onclick="go('profile')"><strong>☰</strong><span id="navProfileText">PROFILE</span></button>
 </nav>
 <div id="toast" class="toast"></div>
+<div id="arrivalMode" class="arrival">
+  <div class="arrivaltop"><div class="brand">PARK<b>BUDDY</b></div><button class="iconbtn" onclick="closeArrival()">×</button></div>
+  <div class="arrivallabel">ARRIVAL MODE · PLAN A</div>
+  <div id="arrivalDistance" class="arrivaldistance">—</div>
+  <div id="arrivalName" class="arrivalname">Parking</div>
+  <div class="arrivalgrid">
+    <div class="arrivalmetric"><small>SÜRÜŞ</small><b id="arrivalDrive">—</b></div>
+    <div class="arrivalmetric"><small>YÜRÜME</small><b id="arrivalWalk">—</b></div>
+  </div>
+  <button class="primary full" style="margin-top:18px" onclick="switchToPlanB()">PLAN B'YE GEÇ</button>
+  <button class="ghost full" style="margin-top:8px" onclick="closeArrival()">NORMAL GÖRÜNÜM</button>
+</div>
 </main>
 
 <script>
@@ -353,8 +377,59 @@ async function loadDecisionPlan(){
       const dist=p.distance_m<1000?p.distance_m+' m':(p.distance_m/1000).toFixed(1)+' km';
       return '<div class="card '+cls+'"><div class="eyebrow">'+label+'</div><div class="detailhero" style="margin-top:8px"><div><b>'+p.name+'</b><p>'+dist+' · ~'+p.walk_minutes+' dk yürüme · '+(p.capacity??'—')+' kapasite</p></div><div class="scorebox"><div class="score">'+p.door_to_door_score+'</div><small>DOOR-TO-DOOR</small></div></div><button class="ghost" onclick="openPlanDetail(\''+label+'\')">DETAY</button></div>';
     };
-    box.innerHTML=card(d.primary,'PLAN A','live')+(d.plan_b?card(d.plan_b,'PLAN B','warn'):'');
+    box.innerHTML=card(d.primary,'PLAN A','live')+(d.plan_b?card(d.plan_b,'PLAN B','warn'):'')+'<button class="primary full" onclick="startArrivalMode()">ARRIVAL MODE</button>';
   }catch(e){box.innerHTML=''}
+}
+async function calculateLeaveTime(){
+  const input=document.getElementById("arriveByTime");
+  const out=document.getElementById("leaveTimeResult");
+  const plan=window.__decisionPlan?.primary;
+  if(!input?.value||!plan){out.textContent="Önce varış saatini ve park planını belirle.";return}
+  if(!pos){try{pos=await geo()}catch{out.textContent="Sürüş süresi için konum izni gerekli.";return}}
+  try{
+    const u='https://router.project-osrm.org/route/v1/driving/'+pos[0]+','+pos[1]+';'+plan.lon+','+plan.lat+'?overview=false';
+    const r=await fetch(u);const d=await r.json();if(!d.routes?.length)throw new Error();
+    const drive=Math.ceil(d.routes[0].duration/60);
+    const walk=plan.walk_minutes||0;
+    const parkingBuffer=8;
+    const total=drive+walk+parkingBuffer;
+    const [hh,mm]=input.value.split(":").map(Number);
+    const arrival=new Date();arrival.setHours(hh,mm,0,0);
+    if(arrival<Date.now())arrival.setDate(arrival.getDate()+1);
+    const leave=new Date(arrival.getTime()-total*60000);
+    window.__arrivalDrive=drive;
+    out.innerHTML='<b style="color:var(--mint)">'+leave.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})+'</b> civarı çık · '+drive+' dk sürüş + '+walk+' dk yürüyüş + '+parkingBuffer+' dk park tamponu.';
+  }catch{out.textContent="Rota süresi şu anda hesaplanamadı."}
+}
+async function startArrivalMode(){
+  const p=window.__decisionPlan?.primary;if(!p)return;
+  if(!pos){try{pos=await geo()}catch{return toast("Arrival Mode için konum gerekli.")}}
+  window.__arrivalPlan=p;
+  document.getElementById("arrivalName").textContent=p.name;
+  document.getElementById("arrivalWalk").textContent=(p.walk_minutes||"—")+" dk";
+  document.getElementById("arrivalMode").classList.add("show");
+  updateArrivalMode();
+  clearInterval(window.__arrivalTimer);
+  window.__arrivalTimer=setInterval(updateArrivalMode,15000);
+}
+async function updateArrivalMode(){
+  const p=window.__arrivalPlan;if(!p||!pos)return;
+  try{pos=await geo()}catch{}
+  const dx=(p.lon-pos[0])*68.5,dy=(p.lat-pos[1])*111;
+  const km=Math.sqrt(dx*dx+dy*dy);
+  document.getElementById("arrivalDistance").textContent=km<1?Math.round(km*1000)+" m":km.toFixed(1)+" km";
+  try{
+    const r=await fetch('https://router.project-osrm.org/route/v1/driving/'+pos[0]+','+pos[1]+';'+p.lon+','+p.lat+'?overview=false');
+    const d=await r.json();if(d.routes?.[0])document.getElementById("arrivalDrive").textContent=Math.ceil(d.routes[0].duration/60)+" dk";
+  }catch{}
+}
+function closeArrival(){document.getElementById("arrivalMode").classList.remove("show");clearInterval(window.__arrivalTimer)}
+function switchToPlanB(){
+  const p=window.__decisionPlan?.plan_b;if(!p)return toast("Plan B bulunamadı.");
+  window.__arrivalPlan=p;selectedParking=p;
+  document.getElementById("arrivalName").textContent=p.name;
+  document.getElementById("arrivalWalk").textContent=(p.walk_minutes||"—")+" dk";
+  updateArrivalMode();toast("Plan B aktif.");
 }
 function openPlanDetail(label){
   const d=window.__decisionPlan;if(!d)return;
