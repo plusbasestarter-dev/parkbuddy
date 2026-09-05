@@ -47,10 +47,14 @@ async function loadOfficialParkings(){
     const d=await r.json();
     officialParkings=d.parkings||[];
     if(!officialParkings.length)throw new Error('Veri yok');
-    box.innerHTML='<b>ZDM CANLI OTOPARKLAR</b>'+officialParkings.map(p=>{
+    const liveFirst=[...officialParkings].sort((a,b)=>(b.free_spaces!=null)-(a.free_spaces!=null));
+    const featured=liveFirst.slice(0,6);
+    box.innerHTML='<b>RESMİ VARŞOVA OTOPARKLARI</b><p>'+officialParkings.length+' doğrulanmış tesis haritada hazır.</p>'+featured.map(p=>{
       const live=p.free_spaces!=null;
       const occ=p.occupancy_percent!=null?' · %'+p.occupancy_percent+' dolu':'';
-      return '<div class="parkingItem"><div><strong>'+p.name+'</strong><small>'+p.capacity+' kapasite · '+p.price_per_hour+' PLN/saat'+occ+'</small><button class="outline" onclick="goParking(\''+p.id+'\')">ROTA</button></div><div class="free">'+(live?p.free_spaces:'—')+'<small>'+(live?'BOŞ':'CANLI VERİ YOK')+'</small></div></div>'
+      const price=p.price_per_hour!=null?p.price_per_hour+' PLN/saat':'fiyat bilgisi yok';
+      const type=p.parking_type==='park_and_ride'?'P+R':(p.parking_type==='municipal'?'Belediye':'Yeraltı');
+      return '<div class="parkingItem"><div><strong>'+p.name+'</strong><small>'+type+' · '+(p.capacity??'—')+' kapasite · '+price+occ+'</small><button class="outline" onclick="goParking(\''+p.id+'\')">ROTA</button></div><div class="free">'+(live?p.free_spaces:'P')+'<small>'+(live?'BOŞ':'RESMİ')+'</small></div></div>'
     }).join('');
     renderOfficialMarkers();
   }catch(e){
