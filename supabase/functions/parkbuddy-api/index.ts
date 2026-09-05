@@ -182,6 +182,31 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  if (action === 'sync-next-baseline' && req.method === 'POST') {
+    const { data: nextCity, error } = await db.from('cities')
+      .select('id,name')
+      .eq('status','planned')
+      .order('name',{ascending:true})
+      .limit(1)
+      .maybeSingle()
+    if (error) return json({ error: error.message }, 500)
+    if (!nextCity) return json({ ok:true, done:true, message:'No planned cities remain' })
+
+    const self = new URL(req.url)
+    self.search = ''
+    self.searchParams.set('action','sync-osm-baseline')
+    self.searchParams.set('city_id',nextCity.id)
+    self.searchParams.set('radius','12000')
+
+    const response = await fetch(self.toString(), {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:'{}'
+    })
+    const body = await response.text()
+    return new Response(body,{status:response.status,headers:cors})
+  }
+
   if (action === 'sync-osm-baseline' && req.method === 'POST') {
     const cityId = url.searchParams.get('city_id') || ''
     if (!cityId) return json({ error: 'city_id required' }, 400)
