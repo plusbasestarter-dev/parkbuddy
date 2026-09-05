@@ -2,13 +2,19 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-parkbuddy-admin-key',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Content-Type': 'application/json'
 }
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: cors })
+}
+
+function isAdminRequest(req: Request) {
+  const adminKey = Deno.env.get('PARKBUDDY_ADMIN_KEY') || ''
+  const provided = req.headers.get('x-parkbuddy-admin-key') || ''
+  return adminKey.length >= 16 && provided === adminKey
 }
 
 function scoreParking(p: any, radius: number) {
@@ -177,6 +183,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (action === 'sync-osm-baseline' && req.method === 'POST') {
+    if (!isAdminRequest(req)) return json({ error: 'Admin only' }, 403)
     try {
       const cityId = url.searchParams.get('city_id') || ''
       if (!cityId) return json({ error: 'city_id required' }, 400)
@@ -190,6 +197,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (action === 'sync-next-baseline' && req.method === 'POST') {
+    if (!isAdminRequest(req)) return json({ error: 'Admin only' }, 403)
     try {
       const { data: nextCity, error } = await db.from('cities')
         .select('id,name')
