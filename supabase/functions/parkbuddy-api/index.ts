@@ -219,6 +219,15 @@ Deno.serve(async (req: Request) => {
 
         const capacityRaw = String(t.capacity || '').replace(/[^0-9]/g, '')
         const capacity = capacityRaw ? Number(capacityRaw) : null
+        const access = String(t.access || '').toLowerCase()
+        const parkingTag = String(t.parking || '').toLowerCase()
+        const hasName = Boolean(t.name || t.operator)
+        const structured = ['underground','multi-storey'].includes(parkingTag) || t.park_ride === 'yes' || t.park_and_ride === 'yes'
+        const publicEnough = !['private','no'].includes(access)
+        const streetLike = ['street_side','lane','on_street'].includes(parkingTag)
+        const useful = hasName || structured || (capacity != null && capacity >= 10) || t.fee === 'yes'
+        if (!publicEnough || streetLike || !useful) continue
+
         const name = String(t.name || t.operator || ('Parking ' + e.type + ' ' + e.id)).slice(0, 200)
 
         rows.push({
@@ -241,6 +250,12 @@ Deno.serve(async (req: Request) => {
       }
 
       if (!rows.length) return json({ ok: true, synced: 0, city_id: city.id })
+
+      const { error: deleteError } = await db.from('parking_locations')
+        .delete()
+        .eq('city_id', city.id)
+        .eq('source', 'OpenStreetMap')
+      if (deleteError) return json({ error: deleteError.message }, 500)
 
       const chunks = []
       for (let i=0;i<rows.length;i+=400) chunks.push(rows.slice(i,i+400))
