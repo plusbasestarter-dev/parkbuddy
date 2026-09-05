@@ -328,21 +328,21 @@ async function loadCities(){
     const d=await r.json();cityRegistry=d.cities||[];
     const sel=document.getElementById("citySelect");
     if(sel){
-      sel.innerHTML=cityRegistry.map(c=>'<option value="'+c.id+'">'+c.name+(c.status==="active"?" · ACTIVE":" · COMING")+'</option>').join("");
+      sel.innerHTML=cityRegistry.map(c=>'<option value="'+c.id+'">'+c.name+(c.status==="active"?" · OFFICIAL":c.status==="baseline"?" · BETA":" · COMING")+'</option>').join("");
       sel.value=currentCityId;
     }
     const c=cityRegistry.find(x=>x.id===currentCityId)||cityRegistry[0];
-    if(c){center=[+c.lon,+c.lat];document.getElementById("coverageLabel").textContent=c.name.toUpperCase()+' · '+(c.status==="active"?"ACTIVE":"COMING SOON");}
+    if(c){center=[+c.lon,+c.lat];document.getElementById("coverageLabel").textContent=c.name.toUpperCase()+' · '+(c.status==="active"?"OFFICIAL":c.status==="baseline"?"BETA":"COMING SOON");}
   }catch{}
 }
 async function changeCity(id){
   currentCityId=id;localStorage.setItem("parkbuddy_city",id);
   const c=cityRegistry.find(x=>x.id===id);
-  if(c){center=[+c.lon,+c.lat];document.getElementById("coverageLabel").textContent=c.name.toUpperCase()+' · '+(c.status==="active"?"ACTIVE":"COMING SOON");}
+  if(c){center=[+c.lon,+c.lat];document.getElementById("coverageLabel").textContent=c.name.toUpperCase()+' · '+(c.status==="active"?"OFFICIAL":c.status==="baseline"?"BETA":"COMING SOON");}
   officialParkings=[];officialMarkers.forEach(m=>m.remove());officialMarkers=[];
   if(map){map.jumpTo({center,zoom:11.6})}
   await loadOfficialParkings();
-  if(c&&c.status!=="active")toast(c.name+" veri entegrasyonu hazırlanıyor.");
+  if(c&&c.status==="planned")toast(c.name+" veri entegrasyonu hazırlanıyor.");if(c&&c.status==="baseline")toast(c.name+" baseline verisi aktif.");
 }
 async function loadOfficialParkings(){
   try{
