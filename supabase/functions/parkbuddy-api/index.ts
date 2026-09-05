@@ -192,13 +192,9 @@ Deno.serve(async (req: Request) => {
     if (error) return json({ error: error.message }, 500)
     if (!nextCity) return json({ ok:true, done:true, message:'No planned cities remain' })
 
-    const self = new URL(req.url)
-    self.search = ''
-    self.searchParams.set('action','sync-osm-baseline')
-    self.searchParams.set('city_id',nextCity.id)
-    self.searchParams.set('radius','12000')
+    const selfUrl = 'https://oespoljjeslpsnhjwsra.supabase.co/functions/v1/parkbuddy-api?action=sync-osm-baseline&city_id=' + encodeURIComponent(nextCity.id) + '&radius=12000'
 
-    const response = await fetch(self.toString(), {
+    const response = await fetch(selfUrl, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:'{}'
