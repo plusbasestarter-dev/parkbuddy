@@ -9,7 +9,7 @@
 <script src="https://unpkg.com/maplibre-gl@5.7.1/dist/maplibre-gl.js"></script>
 <style>
 :root{--bg:#07141e;--panel:#0c202b;--line:#21404c;--mint:#22f0b6;--muted:#8da6ad;--white:#f7fffd}
-*{box-sizing:border-box}body{margin:0;background:#02080d;color:var(--white);font-family:Inter,system-ui,Arial}.app{max-width:430px;min-height:100vh;margin:auto;background:linear-gradient(#07141e,#061018);padding-bottom:72px}.top{height:62px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#07141eee;z-index:10}.brand{font-weight:950}.brand b{color:var(--mint)}.tag{font-size:9px;background:var(--mint);color:#032018;padding:4px 6px;margin-left:6px}.screen{display:none;padding:18px}.screen.active{display:block}h1{font-size:31px;line-height:1.05}p{color:var(--muted);line-height:1.45}.search{display:grid;grid-template-columns:1fr 52px;gap:8px}.search input,button{border-radius:0;font:inherit}.search input{background:#071821;color:white;border:1px solid #365764;padding:14px}.primary{background:var(--mint);border:0;color:#032018;font-weight:900;padding:14px}.outline{background:transparent;border:1px solid var(--mint);color:white;font-weight:900;padding:13px}.full{width:100%}.card{border:1px solid var(--line);background:var(--panel);padding:14px;margin:12px 0}.map{height:440px;margin:0 -18px 12px}.small{height:340px}.notice{border-left:3px solid var(--mint);background:#0b2821;padding:12px;color:#baffed;font-size:12px;margin:12px 0}.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(430px,100%);height:64px;display:grid;grid-template-columns:repeat(3,1fr);background:#07141e;border-top:1px solid var(--line)}.nav button{background:none;border:0;color:var(--muted)}.nav button:hover{color:var(--mint)}.row{display:flex;gap:8px}.row>*{flex:1}.marker{width:34px;height:34px;display:grid;place-items:center;border:2px solid var(--mint);background:#07141e;color:var(--mint);font-weight:950}.me{width:18px;height:18px;border-radius:50%;background:#5d86ff;border:4px solid white}.back{background:none;border:0;color:white;font-size:28px;padding:0}.head{display:flex;gap:12px;align-items:center}.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}.stats div{border:1px solid var(--line);padding:10px;color:var(--muted)}.stats b{display:block;color:white;margin-top:3px}
+*{box-sizing:border-box}body{margin:0;background:#02080d;color:var(--white);font-family:Inter,system-ui,Arial}.app{max-width:430px;min-height:100vh;margin:auto;background:linear-gradient(#07141e,#061018);padding-bottom:72px}.top{height:62px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#07141eee;z-index:10}.brand{font-weight:950}.brand b{color:var(--mint)}.tag{font-size:9px;background:var(--mint);color:#032018;padding:4px 6px;margin-left:6px}.screen{display:none;padding:18px}.screen.active{display:block}h1{font-size:31px;line-height:1.05}p{color:var(--muted);line-height:1.45}.search{display:grid;grid-template-columns:1fr 52px;gap:8px}.search input,button{border-radius:0;font:inherit}.search input{background:#071821;color:white;border:1px solid #365764;padding:14px}.primary{background:var(--mint);border:0;color:#032018;font-weight:900;padding:14px}.outline{background:transparent;border:1px solid var(--mint);color:white;font-weight:900;padding:13px}.full{width:100%}.card{border:1px solid var(--line);background:var(--panel);padding:14px;margin:12px 0}.map{height:440px;margin:0 -18px 12px}.small{height:340px}.notice{border-left:3px solid var(--mint);background:#0b2821;padding:12px;color:#baffed;font-size:12px;margin:12px 0}.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(430px,100%);height:64px;display:grid;grid-template-columns:repeat(3,1fr);background:#07141e;border-top:1px solid var(--line)}.nav button{background:none;border:0;color:var(--muted)}.nav button:hover{color:var(--mint)}.row{display:flex;gap:8px}.row>*{flex:1}.marker{width:34px;height:34px;display:grid;place-items:center;border:2px solid var(--mint);background:#07141e;color:var(--mint);font-weight:950}.me{width:18px;height:18px;border-radius:50%;background:#5d86ff;border:4px solid white}.back{background:none;border:0;color:white;font-size:28px;padding:0}.head{display:flex;gap:12px;align-items:center}.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}.stats div{border:1px solid var(--line);padding:10px;color:var(--muted)}.stats b{display:block;color:white;margin-top:3px}.parkingItem{display:grid;grid-template-columns:1fr auto;gap:10px;padding:11px 0;border-top:1px solid var(--line)}.parkingItem:first-of-type{margin-top:8px}.parkingItem small{display:block;color:var(--muted);margin-top:3px}.free{font-size:20px;font-weight:950;color:var(--mint);text-align:right}.free small{font-size:9px;font-weight:700}.parkingItem button{margin-top:7px;padding:8px 10px;font-size:10px}
 </style>
 </head>
 <body>
@@ -21,7 +21,8 @@
 <p>Warszawa odaklı ilk ParkBuddy sürümü. Hedefini ara, gerçek GPS konumunu kullan ve rota oluştur.</p>
 <div class="search"><input id="q" placeholder="Złote Tarasy, Warszawa"><button class="primary" onclick="searchPlace()">→</button></div>
 <div class="card"><b>SPPN temel kural seti</b><div class="stats"><div>Ücretli saat<b>Pzt–Cum 08–20</b></div><div>1. saat<b>4.50 PLN</b></div><div>2. saat<b>5.40 PLN</b></div><div>3. saat<b>6.40 PLN</b></div></div></div>
-<div class="notice">Canlı doluluk doğrulanmadan sahte park yüzdesi göstermiyoruz.</div>
+<div class="notice">Canlı doluluk yalnızca doğrulanmış ZDM kaynaklarından gösterilir.</div>
+<div id="officialParkingList" class="card"><b>ZDM CANLI OTOPARKLAR</b><p>Canlı veri yükleniyor…</p></div>
 <button class="outline full" onclick="go('map')">VARŞOVA HARİTASI</button>
 </section>
 
@@ -36,14 +37,48 @@
 <script>
 const style={version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap'}},layers:[{id:'osm',type:'raster',source:'osm'}]};
 const API='https://oespoljjeslpsnhjwsra.supabase.co/functions/v1/parkbuddy-api';
-const center=[21.0122,52.2297];let map,routeMap,carMap,pos,dest;
+const center=[21.0122,52.2297];let map,routeMap,carMap,pos,dest;let officialMarkers=[];let officialParkings=[];
+
+async function loadOfficialParkings(){
+  const box=document.getElementById('officialParkingList');
+  try{
+    const r=await fetch(API+'?action=official-parking');
+    if(!r.ok)throw new Error('API '+r.status);
+    const d=await r.json();
+    officialParkings=d.parkings||[];
+    if(!officialParkings.length)throw new Error('Veri yok');
+    box.innerHTML='<b>ZDM CANLI OTOPARKLAR</b>'+officialParkings.map(p=>{
+      const live=p.free_spaces!=null;
+      const occ=p.occupancy_percent!=null?' · %'+p.occupancy_percent+' dolu':'';
+      return '<div class="parkingItem"><div><strong>'+p.name+'</strong><small>'+p.capacity+' kapasite · '+p.price_per_hour+' PLN/saat'+occ+'</small><button class="outline" onclick="goParking(\''+p.id+'\')">ROTA</button></div><div class="free">'+(live?p.free_spaces:'—')+'<small>'+(live?'BOŞ':'CANLI VERİ YOK')+'</small></div></div>'
+    }).join('');
+    renderOfficialMarkers();
+  }catch(e){
+    box.innerHTML='<b>ZDM CANLI OTOPARKLAR</b><p>Canlı ZDM verisine şu anda ulaşılamıyor. Sahte değer göstermiyoruz.</p>';
+  }
+}
+function renderOfficialMarkers(){
+  if(!map||!map.loaded()||!officialParkings.length)return;
+  officialMarkers.forEach(m=>m.remove());officialMarkers=[];
+  officialParkings.forEach(p=>{
+    const e=document.createElement('div');e.className='marker';e.textContent=p.free_spaces!=null?String(p.free_spaces):'P';
+    const popup=new maplibregl.Popup({offset:18}).setHTML('<b>'+p.name+'</b><br>'+(p.free_spaces!=null?p.free_spaces+' boş / '+p.capacity:'Canlı sayı yok')+'<br>'+p.price_per_hour+' PLN/saat');
+    officialMarkers.push(new maplibregl.Marker({element:e}).setLngLat([p.lon,p.lat]).setPopup(popup).addTo(map));
+  })
+}
+function goParking(id){
+  const p=officialParkings.find(x=>x.id===id);if(!p)return;
+  dest={lon:+p.lon,lat:+p.lat,name:p.name};route();
+}
+
 function deviceId(){
   let id=localStorage.getItem('parkbuddy_device_id');
   if(!id){id='pb_'+crypto.randomUUID();localStorage.setItem('parkbuddy_device_id',id)}
   return id
 }
-function go(id){document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');setTimeout(()=>{if(id==='map')initMap();if(id==='car')initCar()},50)}
-function initMap(){if(map){map.resize();return}map=new maplibregl.Map({container:'mapbox',style,center,zoom:12});}
+function go(id){document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');setTimeout(()=>{if(id==='map')loadOfficialParkings();
+initMap();if(id==='car')initCar()},50)}
+function initMap(){if(map){map.resize();renderOfficialMarkers();return}map=new maplibregl.Map({container:'mapbox',style,center,zoom:12});map.on('load',renderOfficialMarkers)}
 function geo(){return new Promise((ok,no)=>navigator.geolocation.getCurrentPosition(p=>ok([p.coords.longitude,p.coords.latitude]),no,{enableHighAccuracy:true,timeout:10000}))}
 async function locate(){try{pos=await geo();go('map');initMap();const e=document.createElement('div');e.className='me';new maplibregl.Marker({element:e}).setLngLat(pos).addTo(map);map.flyTo({center:pos,zoom:15})}catch{alert('Konum izni gerekli.')}}
 async function searchPlace(){const q=document.getElementById('q').value||'Złote Tarasy Warszawa';const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=pl&q='+encodeURIComponent(q));const a=await r.json();if(!a.length)return alert('Adres bulunamadı');dest={lon:+a[0].lon,lat:+a[0].lat,name:a[0].display_name};await route()}
