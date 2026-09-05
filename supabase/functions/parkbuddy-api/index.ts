@@ -83,6 +83,15 @@ Deno.serve(async (req: Request) => {
 
   const db = createClient(supabaseUrl, secret)
 
+  if (action === 'cities' && req.method === 'GET') {
+    const { data, error } = await db.from('cities')
+      .select('id,name,country_code,lat,lon,status,parking_count,live_data_status')
+      .order('parking_count', { ascending: false })
+      .order('name', { ascending: true })
+    if (error) return json({ error: error.message }, 500)
+    return json({ country: 'PL', cities: data || [] })
+  }
+
   if (action === 'health' && req.method === 'GET') {
     return json({ ok: true, service: 'parkbuddy-poland-edge', city: 'Warszawa' })
   }
@@ -237,11 +246,13 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'lat and lon are required' }, 400)
     }
 
+    const cityId = url.searchParams.get('city_id') || null
     const { data, error } = await db.rpc('nearby_parking', {
       p_lat: lat,
       p_lon: lon,
       p_radius_m: radius,
-      p_limit: limit
+      p_limit: limit,
+      p_city_id: cityId
     })
 
     if (error) return json({ error: error.message }, 500)
@@ -295,8 +306,9 @@ Deno.serve(async (req: Request) => {
     const radius = Math.min(Math.max(Number(url.searchParams.get('radius') || 5000), 500), 15000)
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return json({ error: 'lat and lon are required' }, 400)
 
+    const cityId = url.searchParams.get('city_id') || null
     const { data, error } = await db.rpc('nearby_parking', {
-      p_lat: lat, p_lon: lon, p_radius_m: radius, p_limit: 12
+      p_lat: lat, p_lon: lon, p_radius_m: radius, p_limit: 12, p_city_id: cityId
     })
     if (error) return json({ error: error.message }, 500)
 
