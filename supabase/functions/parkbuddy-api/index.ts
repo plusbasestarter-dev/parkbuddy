@@ -249,25 +249,43 @@ Deno.serve(async (req: Request) => {
     const rows = (data || []).map((p: any) => {
       const distance_m = Math.round(Number(p.distance_m || 0))
       const walk_minutes = Math.max(1, Math.round(distance_m / 80))
+      const capacity = Math.max(0, Number(p.capacity || 0))
+
+      const proximityPoints = Math.max(0, 1 - distance_m / radius) * 65
+      const capacityPoints = Math.min(capacity / 500, 1) * 30
+      const confidencePoints = p.data_confidence === 'verified' ? 5 : 0
+      const decision_score = Math.round(proximityPoints + capacityPoints + confidencePoints)
+
       let recommendation = 'nearby'
-      if (p.parking_type === 'park_and_ride') recommendation = 'park_and_ride'
-      if (distance_m <= 700 && Number(p.capacity || 0) >= 80) recommendation = 'strong_candidate'
+      if (decision_score >= 80) recommendation = 'best_candidate'
+      else if (decision_score >= 65) recommendation = 'strong_candidate'
+      else if (p.parking_type === 'park_and_ride') recommendation = 'park_and_ride'
 
       return {
         ...p,
         distance_m,
         walk_minutes,
+        decision_score,
+        score_basis: {
+          proximity_points: Math.round(proximityPoints),
+          capacity_points: Math.round(capacityPoints),
+          confidence_points: Math.round(confidencePoints)
+        },
         recommendation,
         availability_probability: null
       }
-    })
+    }).sort((a: any, b: any) =>
+      b.decision_score - a.decision_score || a.distance_m - b.distance_m
+    )
 
     return json({
       destination: { lat, lon },
       radius_m: radius,
       count: rows.length,
       parkings: rows,
-      note: 'Ranked by verified location distance. Availability probability is intentionally unavailable.'
+      score_version: 'decision-v1',
+      score_weights: { proximity: 65, capacity: 30, verified_data: 5 },
+      note: 'ParkBuddy Score is a transparent decision score, not an availability prediction. Live occupancy is not included yet.'
     })
   }
 
