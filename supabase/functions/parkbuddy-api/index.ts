@@ -48,8 +48,8 @@ async function fetchOfficialParking(db: any) {
   } catch (_) {}
 
   const { data, error } = await db.from('parking_locations')
-    .select('id,name,parking_type,currency,price_per_hour,lat,lon,capacity,official_url,data_confidence')
-    .in('id', ['WAW_ZDM_WARYNSKIEGO','WAW_ZDM_KRASINSKICH'])
+    .select('id,name,parking_type,currency,price_per_hour,lat,lon,capacity,official_url,data_confidence,source')
+    .order('name', { ascending: true })
 
   if (error) throw error
 
@@ -97,6 +97,65 @@ Deno.serve(async (req: Request) => {
       subsequent_hour: 4.50,
       status: 'baseline_v1'
     })
+  }
+
+  if (action === 'sync-official-static' && req.method === 'POST') {
+    try {
+      const sources = [
+        {
+          prefix: 'WAW_PR_',
+          type: 'park_and_ride',
+          source: 'Warsaw ArcGIS parkingi_P_R',
+          url: 'https://services7.arcgis.com/gpQ1tnydOYYnGpcS/ArcGIS/rest/services/parkingi_P_R/FeatureServer/0/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=json'
+        },
+        {
+          prefix: 'WAW_ZTP_',
+          type: 'municipal',
+          source: 'Warsaw ArcGIS Parkingi_ZTP_punkty',
+          url: 'https://services7.arcgis.com/gpQ1tnydOYYnGpcS/ArcGIS/rest/services/Parkingi_ZTP_punkty/FeatureServer/0/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=json'
+        }
+      ]
+
+      let rows: any[] = []
+      for (const src of sources) {
+        const response = await fetch(src.url)
+        if (!response.ok) throw new Error(src.source + ' HTTP ' + response.status)
+        const payload = await response.json()
+        for (const feature of payload.features || []) {
+          const a = feature.attributes || {}
+          const g = feature.geometry || {}
+          const objectId = Number(a.OBJECTID)
+          const name = String(a['Nazwa'] || '').trim()
+          const capacity = Number(a['Liczba_miejsc'] ?? a['Liczba_mie'])
+          const lon = Number(g.x)
+          const lat = Number(g.y)
+          if (!objectId || !name || !Number.isFinite(lon) || !Number.isFinite(lat)) continue
+
+          rows.push({
+            id: src.prefix + objectId,
+            city: 'Warszawa',
+            country_code: 'PL',
+            name,
+            parking_type: src.type,
+            currency: 'PLN',
+            price_per_hour: null,
+            lat,
+            lon,
+            source: src.source,
+            source_updated_at: new Date().toISOString(),
+            capacity: Number.isFinite(capacity) ? capacity : null,
+            official_url: src.url,
+            data_confidence: 'verified'
+          })
+        }
+      }
+
+      const { error } = await db.from('parking_locations').upsert(rows, { onConflict: 'id' })
+      if (error) return json({ error: error.message }, 500)
+      return json({ ok: true, synced: rows.length })
+    } catch (error) {
+      return json({ error: String(error) }, 500)
+    }
   }
 
   if (action === 'official-parking' && req.method === 'GET') {
