@@ -21,8 +21,8 @@
 <p>Warszawa odaklı ilk ParkBuddy sürümü. Hedefini ara, gerçek GPS konumunu kullan ve rota oluştur.</p>
 <div class="search"><input id="q" placeholder="Złote Tarasy, Warszawa"><button class="primary" onclick="searchPlace()">→</button></div>
 <div class="card"><b>SPPN temel kural seti</b><div class="stats"><div>Ücretli saat<b>Pzt–Cum 08–20</b></div><div>1. saat<b>4.50 PLN</b></div><div>2. saat<b>5.40 PLN</b></div><div>3. saat<b>6.40 PLN</b></div></div></div>
-<div class="notice">Canlı doluluk yalnızca doğrulanmış ZDM kaynaklarından gösterilir.</div>
-<div id="officialParkingList" class="card"><b>ZDM CANLI OTOPARKLAR</b><p>Canlı veri yükleniyor…</p></div>
+<div class="notice">ParkBuddy Score; mesafe, kapasite ve veri doğrulamasına dayanır. Canlı doluluk henüz skora dahil değildir.</div>
+<div id="officialParkingList" class="card"><b>RESMİ VARŞOVA OTOPARKLARI</b><p>Resmi park verileri yükleniyor…</p></div>
 <button class="outline full" onclick="go('map')">VARŞOVA HARİTASI</button>
 </section>
 
@@ -60,7 +60,7 @@ async function loadOfficialParkings(){
     }).join('');
     renderOfficialMarkers();
   }catch(e){
-    box.innerHTML='<b>ZDM CANLI OTOPARKLAR</b><p>Canlı ZDM verisine şu anda ulaşılamıyor. Sahte değer göstermiyoruz.</p>';
+    box.innerHTML='<b>RESMİ VARŞOVA OTOPARKLARI</b><p>Resmi park verisine şu anda ulaşılamıyor. Sahte değer göstermiyoruz.</p>';
   }
 }
 function renderOfficialMarkers(){
@@ -82,8 +82,15 @@ function deviceId(){
   if(!id){id='pb_'+crypto.randomUUID();localStorage.setItem('parkbuddy_device_id',id)}
   return id
 }
-function go(id){document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');setTimeout(()=>{if(id==='map')loadOfficialParkings();
-initMap();if(id==='car')initCar()},50)}
+function go(id){
+  document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  setTimeout(()=>{
+    if(id==='map'){initMap();loadOfficialParkings()}
+    if(id==='car')initCar()
+    if(id==='route'&&routeMap)routeMap.resize()
+  },60)
+}
 function initMap(){if(map){map.resize();renderOfficialMarkers();return}map=new maplibregl.Map({container:'mapbox',style,center,zoom:12});map.on('load',renderOfficialMarkers)}
 function geo(){return new Promise((ok,no)=>navigator.geolocation.getCurrentPosition(p=>ok([p.coords.longitude,p.coords.latitude]),no,{enableHighAccuracy:true,timeout:10000}))}
 async function locate(){try{pos=await geo();go('map');initMap();const e=document.createElement('div');e.className='me';new maplibregl.Marker({element:e}).setLngLat(pos).addTo(map);map.flyTo({center:pos,zoom:15})}catch{alert('Konum izni gerekli.')}}
@@ -111,7 +118,7 @@ async function loadNearby(){
       const price=p.price_per_hour!=null?p.price_per_hour+' PLN/saat':'ücret doğrulanmadı';
       const cap=p.capacity!=null?p.capacity+' kapasite':'kapasite yok';
       const dist=p.distance_m<1000?p.distance_m+' m':(p.distance_m/1000).toFixed(1)+' km';
-      return '<div class="parkingItem"><div><strong>#'+(i+1)+' '+p.name+'</strong><small>'+type+' · '+dist+' · ~'+p.walk_minutes+' dk yürüme · '+cap+' · '+price+'</small><button class="outline" onclick="selectNearby('+i+')">BURAYA GİT</button></div><div class="free">P<small>RESMİ</small></div></div>'
+      return '<div class="parkingItem"><div><strong>#'+(i+1)+' '+p.name+'</strong><small>'+type+' · '+dist+' · ~'+p.walk_minutes+' dk yürüme · '+cap+' · '+price+'</small><small>Skor temeli: mesafe '+p.score_basis.proximity_points+'/65 · kapasite '+p.score_basis.capacity_points+'/30 · doğrulama '+p.score_basis.confidence_points+'/5</small><button class="outline" onclick="selectNearby('+i+')">BURAYA GİT</button></div><div class="free">'+p.decision_score+'<small>PARKBUDDY SCORE</small></div></div>'
     }).join('');
     window.__nearby=d.parkings;
   }catch(e){
@@ -157,6 +164,6 @@ async function initCar(){
   document.getElementById('carInfo').textContent=c.name+' · '+new Date(c.time).toLocaleString('pl-PL')
 }
 function showCar(){go('car');initCar()}
-initMap();
+loadOfficialParkings();
 </script>
 </body></html>
