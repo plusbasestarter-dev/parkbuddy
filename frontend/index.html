@@ -39,6 +39,12 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
 .nav button{background:none;border:0;color:#6f8a91;font-size:9px}.nav button strong{display:block;font-size:18px;margin-bottom:4px}.nav button.active{color:var(--mint)}
 .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%) translateY(12px);width:min(390px,calc(100% - 36px));background:#e9fff8;color:#05231a;padding:12px;font-size:12px;font-weight:800;opacity:0;transition:.2s;z-index:60;pointer-events:none}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .empty{padding:20px 0;text-align:center;color:var(--muted)}
+.smartbadge{display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:950;letter-spacing:.6px;color:#061018;background:var(--mint);padding:5px 7px;margin-top:7px}
+.pulse{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 5px rgba(40,239,184,.12)}
+.sessiontime{font-size:38px;font-weight:950;letter-spacing:-1.5px;margin:8px 0 2px}
+.confidence{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+.confidence b:last-child{font-size:20px;color:var(--mint)}
+.insight{border-left:3px solid var(--blue)}
 .onboarding{position:fixed;inset:0;background:rgba(2,8,13,.94);z-index:100;display:none;align-items:flex-end;justify-content:center;backdrop-filter:blur(12px)}
 .onboarding.show{display:flex}
 .onboardcard{width:min(430px,100%);background:linear-gradient(180deg,#0a1a24,#061018);border-top:1px solid var(--line);padding:24px 20px calc(24px + env(safe-area-inset-bottom))}
@@ -78,6 +84,7 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
   </div>
 
   <div id="homeActivePark"></div>
+  <div id="smartArrival" class="card insight" style="display:none"></div>
 
   <div class="sectionhead"><h3 id="quickTitle">HIZLI İŞLEMLER</h3></div>
   <div class="quickgrid">
@@ -132,6 +139,7 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
   <div id="carState">
     <div class="card flat"><p>Park bilgisi yükleniyor…</p></div>
   </div>
+  <div id="parkingSession"></div>
   <div class="mapwrap"><div id="carMap" class="map smallmap"></div></div>
   <button class="primary full" onclick="locateCar()">ARABAMA DÖN</button>
   <button class="ghost full" style="margin-top:8px" onclick="clearCar()">PARK KAYDINI SİL</button>
@@ -291,6 +299,7 @@ async function searchPlace(inputId='q'){
     const a=await r.json();
     if(!a.length)throw new Error('Adres bulunamadı');
     dest={lon:+a[0].lon,lat:+a[0].lat,name:a[0].display_name};
+    smartArrivalInsight();
     await loadNearby();
   }catch(e){toast(e.message||'Arama başarısız')}
 }
@@ -368,6 +377,19 @@ function renderHomeActivePark(c){
   const mins=Math.max(0,Math.round((Date.now()-c.time)/60000));
   box.innerHTML='<div class="card activepark"><div class="eyebrow">AKTİF PARK</div><b style="display:block;margin-top:7px">'+c.name+'</b><p>'+mins+' dk önce park edildi.</p><button class="ghost" onclick="go(\'car\')">ARABAMI GÖSTER</button></div>';
 }
+function smartArrivalInsight(){
+  const box=document.getElementById("smartArrival");
+  if(!box||!dest||!officialParkings.length){if(box)box.style.display="none";return}
+  const ranked=[...officialParkings].filter(p=>p.lat&&p.lon).map(p=>{
+    const dx=(+p.lon-dest.lon)*68.5,dy=(+p.lat-dest.lat)*111;
+    return {...p,_km:Math.sqrt(dx*dx+dy*dy)};
+  }).sort((a,b)=>a._km-b._km).slice(0,5);
+  if(!ranked.length)return;
+  const best=ranked[0];
+  const confidence=Math.max(55,Math.min(96,Math.round(92-best._km*7)));
+  box.style.display="block";
+  box.innerHTML='<div class="eyebrow">SMART ARRIVAL</div><div class="confidence"><div><b>'+best.name+'</b><p>Hedefe yakın doğrulanmış tesis. ParkBuddy bunu rota öncesi aday olarak öne çıkarıyor.</p></div><b>'+confidence+'%</b></div><span class="smartbadge"><span class="pulse"></span> DATA CONFIDENCE</span>';
+}
 async function loadLatestCar(){
   let c=null;
   try{
@@ -380,11 +402,21 @@ async function loadLatestCar(){
 async function initCar(){
   const c=await loadLatestCar();
   const state=document.getElementById('carState');
-  if(!c){state.innerHTML='<div class="card flat"><div class="empty">Aktif park kaydı yok.</div></div>';if(carMap){carMap.remove();carMap=null}return}
+  if(!c){state.innerHTML='<div class="card flat"><div class="empty">Aktif park kaydı yok.</div></div>';renderParkingSession(null);if(carMap){carMap.remove();carMap=null}return}
   state.innerHTML='<div class="card activepark"><div class="eyebrow">PARKED</div><h3 style="margin-top:7px">'+c.name+'</h3><p>'+new Date(c.time).toLocaleString('pl-PL')+'</p></div>';
+  renderParkingSession(c);
   if(carMap){carMap.remove();carMap=null}
   carMap=new maplibregl.Map({container:'carMap',style:mapStyle,center:[c.lon,c.lat],zoom:15});
   carMap.on('load',()=>{const e=document.createElement('div');e.className='marker';e.textContent='AUTO';new maplibregl.Marker({element:e}).setLngLat([c.lon,c.lat]).addTo(carMap)})
+}
+function renderParkingSession(c){
+  const box=document.getElementById("parkingSession");if(!box)return;
+  if(!c){box.innerHTML="";return}
+  const elapsed=Math.max(0,Date.now()-c.time);
+  const h=Math.floor(elapsed/3600000),m=Math.floor((elapsed%3600000)/60000);
+  const mins=Math.round(elapsed/60000);
+  const estimate=selectedParking?.price_per_hour!=null?(Math.ceil(mins/60)*selectedParking.price_per_hour):null;
+  box.innerHTML='<div class="card flat"><div class="eyebrow">PARK SESSION</div><div class="sessiontime">'+String(h).padStart(2,"0")+':'+String(m).padStart(2,"0")+'</div><p>Park süresi otomatik takip ediliyor.'+(estimate!=null?' Tahmini ücret: <b style="color:white">'+estimate.toFixed(2)+' PLN</b>.':' Ücret kaynağı doğrulanmadığı için tahmin göstermiyoruz.')+'</p></div>';
 }
 async function locateCar(){
   const c=JSON.parse(localStorage.getItem('parkbuddy_car')||'null');if(!c)return toast('Aktif park kaydı yok.');
