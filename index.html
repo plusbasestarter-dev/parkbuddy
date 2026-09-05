@@ -66,8 +66,8 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
 <section id="home" class="screen active">
   <div class="hero">
     <div class="eyebrow">WARSAW · BETA</div>
-    <h1>Nereye gidiyorsun?</h1>
-    <p>Hedefi söyle. ParkBuddy doğrulanmış Varşova otoparklarını karşılaştırıp en mantıklı seçenekleri sıralasın.</p>
+    <h1 id="homeTitle">Nereye gidiyorsun?</h1>
+    <p id="homeSub">Hedefi söyle. ParkBuddy doğrulanmış Varşova otoparklarını karşılaştırıp en mantıklı seçenekleri sıralasın.</p>
     <div class="search"><input id="q" placeholder="Złote Tarasy, Warszawa"><button class="primary" onclick="searchPlace()">→</button></div>
   </div>
 
@@ -79,13 +79,13 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
 
   <div id="homeActivePark"></div>
 
-  <div class="sectionhead"><h3>HIZLI İŞLEMLER</h3></div>
+  <div class="sectionhead"><h3 id="quickTitle">HIZLI İŞLEMLER</h3></div>
   <div class="quickgrid">
-    <button class="quick" onclick="go('explore')">⌖<b>Haritada keşfet</b><small>Varşova otoparklarını gör</small></button>
-    <button class="quick" onclick="go('car')">▣<b>Arabam</b><small>Kayıtlı park konumuna dön</small></button>
+    <button class="quick" onclick="go('explore')">⌖<b id="exploreQuick">Haritada keşfet</b><small id="exploreQuickSub">Varşova otoparklarını gör</small></button>
+    <button class="quick" onclick="go('car')">▣<b id="carQuick">Arabam</b><small id="carQuickSub">Kayıtlı park konumuna dön</small></button>
   </div>
 
-  <div class="sectionhead"><h3>ÖNE ÇIKAN RESMİ OTOPARKLAR</h3><small id="parkingCount">—</small></div>
+  <div class="sectionhead"><h3 id="featuredTitle">ÖNE ÇIKAN RESMİ OTOPARKLAR</h3><small id="parkingCount">—</small></div>
   <div id="homeParkingList" class="card flat"><p>Resmi park verileri yükleniyor…</p></div>
 </section>
 
@@ -140,7 +140,7 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
 <section id="profile" class="screen">
   <div class="head"><div><div class="eyebrow">PROFILE</div><h2>Ayarlar</h2></div></div>
   <div class="card flat">
-    <div class="setting"><div><b>Dil</b><small>Geliştirme dili</small></div><span class="chip">Türkçe</span></div>
+    <div class="setting"><div><b id="langLabel">Dil</b><small id="langSub">Uygulama dili</small></div><div class="statusrow"><button class="chip" data-lang="pl" onclick="setLanguage('pl')">PL</button><button class="chip" data-lang="en" onclick="setLanguage('en')">EN</button><button class="chip" data-lang="tr" onclick="setLanguage('tr')">TR</button></div></div>
     <div class="setting"><div><b>Hedef pazar</b><small>İlk şehir</small></div><span class="chip on">Warszawa</span></div>
     <div class="setting"><div><b>Para birimi</b><small>Polonya</small></div><span class="chip">PLN</span></div>
   </div>
@@ -156,10 +156,10 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
 </section>
 
 <nav class="nav">
-  <button id="nav-home" class="active" onclick="go('home')"><strong>⌂</strong>HOME</button>
-  <button id="nav-explore" onclick="go('explore')"><strong>⌖</strong>EXPLORE</button>
-  <button id="nav-car" onclick="go('car')"><strong>▣</strong>MY CAR</button>
-  <button id="nav-profile" onclick="go('profile')"><strong>☰</strong>PROFILE</button>
+  <button id="nav-home" class="active" onclick="go('home')"><strong>⌂</strong><span id="navHomeText">HOME</span></button>
+  <button id="nav-explore" onclick="go('explore')"><strong>⌖</strong><span id="navExploreText">EXPLORE</span></button>
+  <button id="nav-car" onclick="go('car')"><strong>▣</strong><span id="navCarText">MY CAR</span></button>
+  <button id="nav-profile" onclick="go('profile')"><strong>☰</strong><span id="navProfileText">PROFILE</span></button>
 </nav>
 <div id="toast" class="toast"></div>
 </main>
@@ -171,19 +171,51 @@ const mapStyle={version:8,sources:{osm:{type:'raster',tiles:['https://tile.opens
 let map,routeMap,carMap,pos,dest,selectedParking,currentFilter='all';
 let officialParkings=[],officialMarkers=[];
 let onboardingStep=1;
-const ONBOARDING=[
-  {icon:"⌖",eyebrow:"PARKBUDDY",title:"Parkı daha akıllı seç.",text:"Resmi Varşova park verilerini karşılaştırıp sana en mantıklı seçenekleri gösteriyoruz."},
-  {icon:"◎",eyebrow:"LOCATION",title:"Konum yalnız gerektiğinde.",text:"GPS; yakındaki otoparkları, gerçek rotayı ve aracına dönüşü hesaplamak için kullanılır."},
-  {icon:"✓",eyebrow:"DATA CONFIDENCE",title:"Tahmin uydurmuyoruz.",text:"Canlı veri yoksa bunu açıkça söylüyoruz. ParkBuddy Score ile canlı doluluk tahminini birbirinden ayırıyoruz."}
-];
+let currentLanguage=localStorage.getItem("parkbuddy_lang")||((navigator.language||"").toLowerCase().startsWith("pl")?"pl":"en");
+const UI_TEXT={
+  tr:{home:"Nereye gidiyorsun?",sub:"Hedefi söyle. ParkBuddy doğrulanmış Varşova otoparklarını karşılaştırıp en mantıklı seçenekleri sıralasın.",quick:"HIZLI İŞLEMLER",explore:"Haritada keşfet",exploreSub:"Varşova otoparklarını gör",car:"Arabam",carSub:"Kayıtlı park konumuna dön",featured:"ÖNE ÇIKAN RESMİ OTOPARKLAR",navHome:"HOME",navExplore:"EXPLORE",navCar:"MY CAR",navProfile:"PROFILE",lang:"Dil",langSub:"Uygulama dili"},
+  en:{home:"Where are you going?",sub:"Tell us your destination. ParkBuddy compares verified Warsaw parking facilities and ranks the most sensible options.",quick:"QUICK ACTIONS",explore:"Explore the map",exploreSub:"See Warsaw parking facilities",car:"My car",carSub:"Return to your saved parking spot",featured:"FEATURED OFFICIAL PARKING",navHome:"HOME",navExplore:"EXPLORE",navCar:"MY CAR",navProfile:"PROFILE",lang:"Language",langSub:"App language"},
+  pl:{home:"Dokąd jedziesz?",sub:"Podaj cel. ParkBuddy porówna zweryfikowane parkingi w Warszawie i uszereguje najbardziej sensowne opcje.",quick:"SZYBKIE AKCJE",explore:"Odkrywaj na mapie",exploreSub:"Zobacz parkingi w Warszawie",car:"Mój samochód",carSub:"Wróć do zapisanego miejsca parkowania",featured:"POLECANE OFICJALNE PARKINGI",navHome:"START",navExplore:"MAPA",navCar:"AUTO",navProfile:"PROFIL",lang:"Język",langSub:"Język aplikacji"}
+};
+function setLanguage(lang){
+  if(!UI_TEXT[lang])return;
+  currentLanguage=lang;
+  localStorage.setItem("parkbuddy_lang",lang);
+  applyLanguage();
+  renderOnboarding();
+}
+function applyLanguage(){
+  const t=UI_TEXT[currentLanguage]||UI_TEXT.en;
+  document.documentElement.lang=currentLanguage;
+  const m={homeTitle:t.home,homeSub:t.sub,quickTitle:t.quick,exploreQuick:t.explore,exploreQuickSub:t.exploreSub,carQuick:t.car,carQuickSub:t.carSub,featuredTitle:t.featured,navHomeText:t.navHome,navExploreText:t.navExplore,navCarText:t.navCar,navProfileText:t.navProfile,langLabel:t.lang,langSub:t.langSub};
+  Object.entries(m).forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.textContent=val});
+  document.querySelectorAll("[data-lang]").forEach(b=>b.classList.toggle("on",b.dataset.lang===currentLanguage));
+}
+const ONBOARDING={
+  tr:[
+    {icon:"⌖",eyebrow:"PARKBUDDY",title:"Parkı daha akıllı seç.",text:"Resmi Varşova park verilerini karşılaştırıp sana en mantıklı seçenekleri gösteriyoruz."},
+    {icon:"◎",eyebrow:"LOCATION",title:"Konum yalnız gerektiğinde.",text:"GPS; yakındaki otoparkları, gerçek rotayı ve aracına dönüşü hesaplamak için kullanılır."},
+    {icon:"✓",eyebrow:"DATA CONFIDENCE",title:"Tahmin uydurmuyoruz.",text:"Canlı veri yoksa bunu açıkça söylüyoruz. ParkBuddy Score ile canlı doluluk tahminini birbirinden ayırıyoruz."}
+  ],
+  en:[
+    {icon:"⌖",eyebrow:"PARKBUDDY",title:"Choose parking more intelligently.",text:"We compare official Warsaw parking data and surface the most sensible options."},
+    {icon:"◎",eyebrow:"LOCATION",title:"Location only when needed.",text:"GPS is used to find nearby parking, calculate routes and help you return to your car."},
+    {icon:"✓",eyebrow:"DATA CONFIDENCE",title:"No invented predictions.",text:"If live data is unavailable, we say so. ParkBuddy Score stays separate from occupancy prediction."}
+  ],
+  pl:[
+    {icon:"⌖",eyebrow:"PARKBUDDY",title:"Wybieraj parking mądrzej.",text:"Porównujemy oficjalne dane parkingowe Warszawy i pokazujemy najbardziej sensowne opcje."},
+    {icon:"◎",eyebrow:"LOKALIZACJA",title:"Lokalizacja tylko wtedy, gdy jest potrzebna.",text:"GPS służy do znalezienia parkingu, wyznaczenia trasy i powrotu do samochodu."},
+    {icon:"✓",eyebrow:"WIARYGODNOŚĆ DANYCH",title:"Nie zmyślamy prognoz.",text:"Gdy brak danych na żywo, mówimy o tym wprost. ParkBuddy Score nie jest prognozą zajętości."}
+  ]
+};
 function renderOnboarding(){
-  const c=ONBOARDING[onboardingStep-1];
+  const c=(ONBOARDING[currentLanguage]||ONBOARDING.en)[onboardingStep-1];
   document.getElementById("onboardIcon").textContent=c.icon;
   document.getElementById("onboardEyebrow").textContent=c.eyebrow;
   document.getElementById("onboardTitle").textContent=c.title;
   document.getElementById("onboardText").textContent=c.text;
   [1,2,3].forEach(i=>document.getElementById("od"+i).classList.toggle("on",i===onboardingStep));
-  document.getElementById("onboardNext").textContent=onboardingStep===3?"BAŞLA":"DEVAM";
+  document.getElementById("onboardNext").textContent=onboardingStep===3?(currentLanguage==="pl"?"ZACZNIJ":currentLanguage==="tr"?"BAŞLA":"GET STARTED"):(currentLanguage==="pl"?"DALEJ":currentLanguage==="tr"?"DEVAM":"CONTINUE");
 }
 function nextOnboarding(){
   if(onboardingStep<3){onboardingStep++;renderOnboarding();return}
@@ -365,6 +397,7 @@ async function locateCar(){
 }
 function clearCar(){localStorage.removeItem('parkbuddy_car');renderHomeActivePark(null);initCar();toast('Yerel park kaydı silindi.')}
 
+applyLanguage();
 maybeShowOnboarding();
 loadOfficialParkings();
 loadLatestCar();
