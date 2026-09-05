@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07141e">
+<title>ParkBuddy Poland</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@5.7.1/dist/maplibre-gl.js"></script>
+<style>
+:root{--bg:#07141e;--panel:#0c202b;--line:#21404c;--mint:#22f0b6;--muted:#8da6ad;--white:#f7fffd}
+*{box-sizing:border-box}body{margin:0;background:#02080d;color:var(--white);font-family:Inter,system-ui,Arial}.app{max-width:430px;min-height:100vh;margin:auto;background:linear-gradient(#07141e,#061018);padding-bottom:72px}.top{height:62px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#07141eee;z-index:10}.brand{font-weight:950}.brand b{color:var(--mint)}.tag{font-size:9px;background:var(--mint);color:#032018;padding:4px 6px;margin-left:6px}.screen{display:none;padding:18px}.screen.active{display:block}h1{font-size:31px;line-height:1.05}p{color:var(--muted);line-height:1.45}.search{display:grid;grid-template-columns:1fr 52px;gap:8px}.search input,button{border-radius:0;font:inherit}.search input{background:#071821;color:white;border:1px solid #365764;padding:14px}.primary{background:var(--mint);border:0;color:#032018;font-weight:900;padding:14px}.outline{background:transparent;border:1px solid var(--mint);color:white;font-weight:900;padding:13px}.full{width:100%}.card{border:1px solid var(--line);background:var(--panel);padding:14px;margin:12px 0}.map{height:440px;margin:0 -18px 12px}.small{height:340px}.notice{border-left:3px solid var(--mint);background:#0b2821;padding:12px;color:#baffed;font-size:12px;margin:12px 0}.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(430px,100%);height:64px;display:grid;grid-template-columns:repeat(3,1fr);background:#07141e;border-top:1px solid var(--line)}.nav button{background:none;border:0;color:var(--muted)}.nav button:hover{color:var(--mint)}.row{display:flex;gap:8px}.row>*{flex:1}.marker{width:34px;height:34px;display:grid;place-items:center;border:2px solid var(--mint);background:#07141e;color:var(--mint);font-weight:950}.me{width:18px;height:18px;border-radius:50%;background:#5d86ff;border:4px solid white}.back{background:none;border:0;color:white;font-size:28px;padding:0}.head{display:flex;gap:12px;align-items:center}.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}.stats div{border:1px solid var(--line);padding:10px;color:var(--muted)}.stats b{display:block;color:white;margin-top:3px}.parkingItem{display:grid;grid-template-columns:1fr auto;gap:10px;padding:11px 0;border-top:1px solid var(--line)}.parkingItem:first-of-type{margin-top:8px}.parkingItem small{display:block;color:var(--muted);margin-top:3px}.free{font-size:20px;font-weight:950;color:var(--mint);text-align:right}.free small{font-size:9px;font-weight:700}.parkingItem button{margin-top:7px;padding:8px 10px;font-size:10px}
+</style>
+</head>
+<body>
+<main class="app">
+<header class="top"><div class="brand">PARK<b>BUDDY</b><span class="tag">POLAND</span></div><button class="outline" onclick="locate()">⌖</button></header>
+
+<section id="home" class="screen active">
+<h1>Parkı aramak yerine<br>doğru yere git.</h1>
+<p>Warszawa odaklı ilk ParkBuddy sürümü. Hedefini ara, gerçek GPS konumunu kullan ve rota oluştur.</p>
+<div class="search"><input id="q" placeholder="Złote Tarasy, Warszawa"><button class="primary" onclick="searchPlace()">→</button></div>
+<div class="card"><b>SPPN temel kural seti</b><div class="stats"><div>Ücretli saat<b>Pzt–Cum 08–20</b></div><div>1. saat<b>4.50 PLN</b></div><div>2. saat<b>5.40 PLN</b></div><div>3. saat<b>6.40 PLN</b></div></div></div>
+<div class="notice">ParkBuddy Score; mesafe, kapasite ve veri doğrulamasına dayanır. Canlı doluluk henüz skora dahil değildir.</div>
+<div id="officialParkingList" class="card"><b>RESMİ VARŞOVA OTOPARKLARI</b><p>Resmi park verileri yükleniyor…</p></div>
+<button class="outline full" onclick="go('map')">VARŞOVA HARİTASI</button>
+</section>
+
+<section id="map" class="screen"><div class="head"><button class="back" onclick="go('home')">‹</button><h2>Warszawa</h2></div><div id="mapbox" class="map"></div><div class="row"><button class="primary" onclick="locate()">KONUMUM</button><button class="outline" onclick="searchPlace()">HEDEF ARA</button></div></section>
+
+<section id="choices" class="screen"><div class="head"><button class="back" onclick="go('home')">‹</button><h2>Park Seçenekleri</h2></div><div class="card"><b id="choiceDest">Hedef</b><p>En yakın doğrulanmış resmi park tesisleri.</p></div><div id="nearbyList" class="card"><p>Park seçenekleri yükleniyor…</p></div></section>
+
+<section id="route" class="screen"><div class="head"><button class="back" onclick="go('choices')">‹</button><h2>Parka Git</h2></div><div id="routeMap" class="map small"></div><div class="card"><b id="placeName">Hedef</b><p id="routeInfo">Rota bekleniyor.</p></div><button class="primary full" onclick="saveCar()">PARK ETTİM</button></section>
+
+<section id="car" class="screen"><div class="head"><button class="back" onclick="go('home')">‹</button><h2>Arabam</h2></div><div id="carMap" class="map small"></div><div id="carInfo" class="card">Kayıtlı park konumu yok.</div><button class="primary full" onclick="showCar()">ARABAMI BUL</button></section>
+
+<nav class="nav"><button onclick="go('home')">ANA</button><button onclick="go('map')">HARİTA</button><button onclick="go('car')">ARABAM</button></nav>
+</main>
+<script>
+const style={version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap'}},layers:[{id:'osm',type:'raster',source:'osm'}]};
+const API='https://oespoljjeslpsnhjwsra.supabase.co/functions/v1/parkbuddy-api';
+const center=[21.0122,52.2297];let map,routeMap,carMap,pos,dest;let officialMarkers=[];let officialParkings=[];
+
+async function loadOfficialParkings(){
+  const box=document.getElementById('officialParkingList');
+  try{
+    const r=await fetch(API+'?action=official-parking');
+    if(!r.ok)throw new Error('API '+r.status);
+    const d=await r.json();
+    officialParkings=d.parkings||[];
+    if(!officialParkings.length)throw new Error('Veri yok');
+    const liveFirst=[...officialParkings].sort((a,b)=>(b.free_spaces!=null)-(a.free_spaces!=null));
+    const featured=liveFirst.slice(0,6);
+    box.innerHTML='<b>RESMİ VARŞOVA OTOPARKLARI</b><p>'+officialParkings.length+' doğrulanmış tesis haritada hazır.</p>'+featured.map(p=>{
+      const live=p.free_spaces!=null;
+      const occ=p.occupancy_percent!=null?' · %'+p.occupancy_percent+' dolu':'';
+      const price=p.price_per_hour!=null?p.price_per_hour+' PLN/saat':'fiyat bilgisi yok';
+      const type=p.parking_type==='park_and_ride'?'P+R':(p.parking_type==='municipal'?'Belediye':'Yeraltı');
+      return '<div class="parkingItem"><div><strong>'+p.name+'</strong><small>'+type+' · '+(p.capacity??'—')+' kapasite · '+price+occ+'</small><button class="outline" onclick="goParking(\''+p.id+'\')">ROTA</button></div><div class="free">'+(live?p.free_spaces:'P')+'<small>'+(live?'BOŞ':'RESMİ')+'</small></div></div>'
+    }).join('');
+    renderOfficialMarkers();
+  }catch(e){
+    box.innerHTML='<b>RESMİ VARŞOVA OTOPARKLARI</b><p>Resmi park verisine şu anda ulaşılamıyor. Sahte değer göstermiyoruz.</p>';
+  }
+}
+function renderOfficialMarkers(){
+  if(!map||!map.loaded()||!officialParkings.length)return;
+  officialMarkers.forEach(m=>m.remove());officialMarkers=[];
+  officialParkings.forEach(p=>{
+    const e=document.createElement('div');e.className='marker';e.textContent=p.free_spaces!=null?String(p.free_spaces):'P';
+    const popup=new maplibregl.Popup({offset:18}).setHTML('<b>'+p.name+'</b><br>'+(p.free_spaces!=null?p.free_spaces+' boş / '+p.capacity:'Canlı sayı yok')+'<br>'+p.price_per_hour+' PLN/saat');
+    officialMarkers.push(new maplibregl.Marker({element:e}).setLngLat([p.lon,p.lat]).setPopup(popup).addTo(map));
+  })
+}
+function goParking(id){
+  const p=officialParkings.find(x=>x.id===id);if(!p)return;
+  dest={lon:+p.lon,lat:+p.lat,name:p.name};route();
+}
+
+function deviceId(){
+  let id=localStorage.getItem('parkbuddy_device_id');
+  if(!id){id='pb_'+crypto.randomUUID();localStorage.setItem('parkbuddy_device_id',id)}
+  return id
+}
+function go(id){
+  document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  setTimeout(()=>{
+    if(id==='map'){initMap();loadOfficialParkings()}
+    if(id==='car')initCar()
+    if(id==='route'&&routeMap)routeMap.resize()
+  },60)
+}
+function initMap(){if(map){map.resize();renderOfficialMarkers();return}map=new maplibregl.Map({container:'mapbox',style,center,zoom:12});map.on('load',renderOfficialMarkers)}
+function geo(){return new Promise((ok,no)=>navigator.geolocation.getCurrentPosition(p=>ok([p.coords.longitude,p.coords.latitude]),no,{enableHighAccuracy:true,timeout:10000}))}
+async function locate(){try{pos=await geo();go('map');initMap();const e=document.createElement('div');e.className='me';new maplibregl.Marker({element:e}).setLngLat(pos).addTo(map);map.flyTo({center:pos,zoom:15})}catch{alert('Konum izni gerekli.')}}
+async function searchPlace(){
+    const q=document.getElementById('q').value||'Złote Tarasy Warszawa';
+    const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=pl&q='+encodeURIComponent(q));
+    const a=await r.json();
+    if(!a.length)return alert('Adres bulunamadı');
+    dest={lon:+a[0].lon,lat:+a[0].lat,name:a[0].display_name};
+    await loadNearby();
+  }
+
+async function loadNearby(){
+  go('choices');
+  document.getElementById('choiceDest').textContent=dest.name;
+  const list=document.getElementById('nearbyList');
+  list.innerHTML='<p>Park seçenekleri yükleniyor…</p>';
+  try{
+    const r=await fetch(API+'?action=nearby&lat='+dest.lat+'&lon='+dest.lon+'&radius=5000&limit=8');
+    if(!r.ok)throw new Error('API '+r.status);
+    const d=await r.json();
+    if(!d.parkings?.length){list.innerHTML='<p>5 km içinde doğrulanmış resmi otopark bulunamadı.</p>';return}
+    list.innerHTML='<b>EN YAKIN DOĞRULANMIŞ OTOPARKLAR</b>'+d.parkings.map((p,i)=>{
+      const type=p.parking_type==='park_and_ride'?'P+R':(p.parking_type==='municipal'?'Belediye':'Yeraltı');
+      const price=p.price_per_hour!=null?p.price_per_hour+' PLN/saat':'ücret doğrulanmadı';
+      const cap=p.capacity!=null?p.capacity+' kapasite':'kapasite yok';
+      const dist=p.distance_m<1000?p.distance_m+' m':(p.distance_m/1000).toFixed(1)+' km';
+      return '<div class="parkingItem"><div><strong>#'+(i+1)+' '+p.name+'</strong><small>'+type+' · '+dist+' · ~'+p.walk_minutes+' dk yürüme · '+cap+' · '+price+'</small><small>Skor temeli: mesafe '+p.score_basis.proximity_points+'/65 · kapasite '+p.score_basis.capacity_points+'/30 · doğrulama '+p.score_basis.confidence_points+'/5</small><button class="outline" onclick="selectNearby('+i+')">BURAYA GİT</button></div><div class="free">'+p.decision_score+'<small>PARKBUDDY SCORE</small></div></div>'
+    }).join('');
+    window.__nearby=d.parkings;
+  }catch(e){
+    list.innerHTML='<p>Yakındaki otoparklar alınamadı. '+e.message+'</p>';
+  }
+}
+function selectNearby(i){
+  const p=window.__nearby?.[i];if(!p)return;
+  dest={lon:+p.lon,lat:+p.lat,name:p.name};
+  route();
+}
+
+async function route(){if(!pos){try{pos=await geo()}catch{return alert('Rota için konum izni gerekli.')}}const u='https://router.project-osrm.org/route/v1/driving/'+pos[0]+','+pos[1]+';'+dest.lon+','+dest.lat+'?overview=full&geometries=geojson';const r=await fetch(u);const d=await r.json();if(!d.routes?.length)return alert('Rota bulunamadı');go('route');setTimeout(()=>drawRoute(d.routes[0]),100)}
+function drawRoute(r){if(routeMap)routeMap.remove();routeMap=new maplibregl.Map({container:'routeMap',style,center:pos,zoom:13});routeMap.on('load',()=>{routeMap.addSource('r',{type:'geojson',data:{type:'Feature',geometry:r.geometry}});routeMap.addLayer({id:'r',type:'line',source:'r',paint:{'line-color':'#5d86ff','line-width':5}});const b=new maplibregl.LngLatBounds();r.geometry.coordinates.forEach(c=>b.extend(c));routeMap.fitBounds(b,{padding:40});document.getElementById('placeName').textContent=dest.name;document.getElementById('routeInfo').textContent=Math.round(r.duration/60)+' dk · '+(r.distance/1000).toFixed(1)+' km'})}
+async function saveCar(){
+  try{
+    const p=await geo();
+    const local={lon:p[0],lat:p[1],time:Date.now(),name:dest?.name||'Park konumu'};
+    localStorage.setItem('parkbuddy_car',JSON.stringify(local));
+    try{
+      const r=await fetch(API+'?action=park',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_id:deviceId(),lat:p[1],lon:p[0],label:local.name})});
+      if(!r.ok) throw new Error('API '+r.status);
+    }catch(e){console.warn('Park session cloud save failed',e)}
+    go('car')
+  }catch{alert('Konum izni gerekli.')}
+}
+async function initCar(){
+  let c=null;
+  try{
+    const r=await fetch(API+'?action=latest&device_id='+encodeURIComponent(deviceId()));
+    if(r.ok){
+      const d=await r.json();
+      c={lon:+d.lon,lat:+d.lat,time:new Date(d.started_at).getTime(),name:d.label||'Park konumu'}
+      localStorage.setItem('parkbuddy_car',JSON.stringify(c))
+    }
+  }catch(e){console.warn('Cloud latest failed',e)}
+  if(!c)c=JSON.parse(localStorage.getItem('parkbuddy_car')||'null');
+  if(!c){document.getElementById('carInfo').textContent='Kayıtlı park konumu yok.';return}
+  if(carMap)carMap.remove();
+  carMap=new maplibregl.Map({container:'carMap',style,center:[c.lon,c.lat],zoom:15});
+  const e=document.createElement('div');e.className='marker';e.textContent='AUTO';
+  new maplibregl.Marker({element:e}).setLngLat([c.lon,c.lat]).addTo(carMap);
+  document.getElementById('carInfo').textContent=c.name+' · '+new Date(c.time).toLocaleString('pl-PL')
+}
+function showCar(){go('car');initCar()}
+loadOfficialParkings();
+</script>
+</body></html>
