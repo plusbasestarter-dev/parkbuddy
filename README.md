@@ -1,22 +1,25 @@
 # ParkBuddy Poland
 
-Poland-first parking assistant MVP.
+Poland-first parking assistant MVP focused on Warsaw.
 
-## Stack
-- MapLibre + OpenStreetMap
-- Nominatim search (prototype)
-- OSRM routing (prototype)
-- FastAPI
-- PostgreSQL + PostGIS
-- Render-ready backend
-- GitHub Pages-ready frontend
+## Live architecture
+- Frontend: MapLibre + OpenStreetMap
+- Search: Nominatim (beta)
+- Routing: OSRM public demo service (beta)
+- API: Supabase Edge Functions
+- Database: Supabase PostgreSQL + PostGIS
+- Source control: GitHub
+
+## Database
+The project uses:
+- parking_sessions
+- parking_locations
+- parking_snapshots
+
+PostGIS is enabled and ParkBuddy tables have RLS enabled. Browser clients do not access the database directly; the Edge Function performs controlled server-side operations.
 
 ## Data policy
-ParkBuddy does not invent parking-availability percentages. Prediction stays disabled until verified Warsaw occupancy/history data is connected.
+ParkBuddy does not invent parking availability percentages. Prediction remains unavailable until verified Warsaw historical/live occupancy data is connected.
 
-## Next deployment steps
-1. Create PostgreSQL/PostGIS database.
-2. Run database/schema.sql.
-3. Deploy backend with render.yaml.
-4. Set DATABASE_URL and FRONTEND_ORIGIN.
-5. Publish frontend through GitHub Pages.
+## Production gaps
+Public OSM, Nominatim and OSRM endpoints are used only for beta testing. Before public launch these must be replaced with compliant/self-hosted or contracted providers, and API rate limiting/monitoring must be added.
