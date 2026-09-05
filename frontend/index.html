@@ -166,6 +166,9 @@ h1{font-size:32px;line-height:1.02;margin:12px 0 8px;letter-spacing:-.7px}h2{fon
 <section id="profile" class="screen">
   <div class="head"><div><div class="eyebrow">PROFILE</div><h2>Ayarlar</h2></div></div>
   <div class="card flat">
+    <div class="setting"><div><b>Park tercihi</b><small>Öneri motorunun önceliği</small></div><select id="parkingPreference" class="timeinput" style="width:auto;margin:0" onchange="saveParkingPrefs()"><option value="balanced">Dengeli</option><option value="walk">Az yürü</option><option value="cheap">Ucuz</option><option value="capacity">Büyük otopark</option></select></div>
+    <div class="setting"><div><b>Park bütçesi</b><small>Maksimum PLN / saat</small></div><input id="parkingBudget" class="timeinput" style="width:92px;margin:0" type="number" min="0" step="1" placeholder="∞" onchange="saveParkingPrefs()"></div>
+    <div class="setting"><div><b>Yürüme toleransı</b><small>Maksimum dakika</small></div><input id="walkingTolerance" class="timeinput" style="width:92px;margin:0" type="number" min="2" max="30" value="10" onchange="saveParkingPrefs()"></div>
     <div class="setting"><div><b id="langLabel">Dil</b><small id="langSub">Uygulama dili</small></div><div class="statusrow"><button class="chip" data-lang="pl" onclick="setLanguage('pl')">PL</button><button class="chip" data-lang="en" onclick="setLanguage('en')">EN</button><button class="chip" data-lang="tr" onclick="setLanguage('tr')">TR</button></div></div>
     <div class="setting"><div><b>Hedef pazar</b><small>İlk şehir</small></div><span class="chip on">Warszawa</span></div>
     <div class="setting"><div><b>Para birimi</b><small>Polonya</small></div><span class="chip">PLN</span></div>
@@ -282,6 +285,27 @@ function maybeShowOnboarding(){
 }
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(window.__toast);window.__toast=setTimeout(()=>t.classList.remove('show'),2200)}
+function parkingPrefs(){
+  return {
+    preference:localStorage.getItem("parkbuddy_preference")||"balanced",
+    budget:Number(localStorage.getItem("parkbuddy_budget")||0),
+    maxWalk:Number(localStorage.getItem("parkbuddy_max_walk")||10)
+  }
+}
+function saveParkingPrefs(){
+  const pref=document.getElementById("parkingPreference")?.value||"balanced";
+  const budget=document.getElementById("parkingBudget")?.value||"";
+  const walk=document.getElementById("walkingTolerance")?.value||"10";
+  localStorage.setItem("parkbuddy_preference",pref);
+  localStorage.setItem("parkbuddy_budget",budget);
+  localStorage.setItem("parkbuddy_max_walk",walk);
+  toast("Park tercihlerin kaydedildi.");
+}
+function loadParkingPrefs(){
+  const p=parkingPrefs();
+  const a=document.getElementById("parkingPreference"),b=document.getElementById("parkingBudget"),w=document.getElementById("walkingTolerance");
+  if(a)a.value=p.preference;if(b)b.value=p.budget||"";if(w)w.value=p.maxWalk;
+}
 function deviceId(){let id=localStorage.getItem('parkbuddy_device_id');if(!id){id='pb_'+crypto.randomUUID();localStorage.setItem('parkbuddy_device_id',id)}return id}
 function setActiveNav(id){document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));const key=['home','explore','car','profile'].includes(id)?id:(id==='map'?'explore':null);if(key)document.getElementById('nav-'+key)?.classList.add('active')}
 function go(id){document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');setActiveNav(id);window.scrollTo(0,0);setTimeout(()=>{if(id==='explore'){initMap();renderOfficialMarkers()}if(id==='car')initCar();if(id==='route')routeMap?.resize()},60)}
@@ -354,12 +378,22 @@ async function loadNearby(){
   try{
     const r=await fetch(API+'?action=nearby&lat='+dest.lat+'&lon='+dest.lon+'&radius=5000&limit=8');
     if(!r.ok)throw new Error('API '+r.status);
-    const d=await r.json();window.__nearby=d.parkings||[];
+    const d=await r.json();
+    const prefs=parkingPrefs();
+    window.__nearby=(d.parkings||[]).map(p=>{
+      let personal=p.decision_score||0;
+      if(prefs.preference==="walk") personal+=Math.max(0,12-(p.walk_minutes||0));
+      if(prefs.preference==="capacity") personal+=Math.min(12,Math.round((p.capacity||0)/80));
+      if(prefs.preference==="cheap"&&p.price_per_hour!=null) personal+=Math.max(0,12-Math.round(p.price_per_hour));
+      if(prefs.budget>0&&p.price_per_hour!=null&&p.price_per_hour>prefs.budget) personal-=25;
+      if((p.walk_minutes||0)>prefs.maxWalk) personal-=20;
+      return {...p,personal_score:Math.max(0,Math.min(100,personal))};
+    }).sort((a,b)=>b.personal_score-a.personal_score);
     if(!window.__nearby.length){list.innerHTML='<div class="empty">5 km içinde doğrulanmış tesis bulunamadı.</div>';return}
     list.innerHTML=window.__nearby.map((p,i)=>{
       const dist=p.distance_m<1000?p.distance_m+' m':(p.distance_m/1000).toFixed(1)+' km';
       const price=p.price_per_hour!=null?p.price_per_hour+' PLN/saat':'ücret doğrulanmadı';
-      return '<div class="parkingrow"><div><b>#'+(i+1)+' '+p.name+'</b><small>'+typeLabel(p.parking_type)+' · '+dist+' · ~'+p.walk_minutes+' dk yürüme · '+(p.capacity??'—')+' kapasite · '+price+'</small><button class="ghost" onclick="openNearbyDetail('+i+')">DETAY</button></div><div class="scorebox"><div class="score">'+p.decision_score+'</div><small>PARKBUDDY SCORE</small></div></div>'
+      return '<div class="parkingrow"><div><b>#'+(i+1)+' '+p.name+'</b><small>'+typeLabel(p.parking_type)+' · '+dist+' · ~'+p.walk_minutes+' dk yürüme · '+(p.capacity??'—')+' kapasite · '+price+'</small><button class="ghost" onclick="openNearbyDetail('+i+')">DETAY</button></div><div class="scorebox"><div class="score">'+(p.personal_score??p.decision_score)+'</div><small>PERSONAL SCORE</small></div></div>'
     }).join('');
   }catch(e){list.innerHTML='<div class="empty">Park seçenekleri alınamadı.</div>'}
 }
@@ -556,6 +590,7 @@ function clearCar(){localStorage.removeItem('parkbuddy_car');renderHomeActivePar
 
 applyTheme();
 applyLanguage();
+loadParkingPrefs();
 maybeShowOnboarding();
 loadOfficialParkings();
 loadLatestCar();
