@@ -1,6 +1,6 @@
 # ParkBuddy Release Candidate Checklist
 
-Status: v1.0.0-rc1
+Status: v1.0.0-rc2
 Market: Poland
 Scope: bug fixes and release hardening only
 
