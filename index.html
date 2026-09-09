@@ -21,7 +21,7 @@
 <section id="choices" class="screen"><div class="head"><button class="back" onclick="go('home')">‹</button><div><div class="eyebrow">PARK PLAN</div><h2>En iyi seçenekler</h2></div></div><div class="card featured"><b id="choiceDest">Hedef</b><p>Öneriler mesafe, yürüyüş süresi, kapasite ve tercihlerine göre sıralanır.</p></div><div id="decisionPlan"></div><div id="nearbyList" class="card flat"></div></section>
 <section id="detail" class="screen"><div class="head"><button class="back" onclick="go('choices')">‹</button><div><div class="eyebrow">DETAIL</div><h2>Park detayı</h2></div></div><div id="detailContent"></div></section>
 <section id="route" class="screen"><div class="head"><button class="back" onclick="go('detail')">‹</button><div><div class="eyebrow">NAVIGATION</div><h2>Parka git</h2></div></div><div class="mapwrap"><div id="routeMap" class="map smallmap"></div></div><div class="card flat"><b id="placeName">Hedef</b><p id="routeInfo">Rota bekleniyor.</p></div><button class="primary full" onclick="saveCar()">PARK ETTİM</button></section>
-<section id="car" class="screen"><div class="head"><div><div class="eyebrow">MY CAR</div><h2>Aktif park</h2></div></div><div id="carState" class="card flat">Kayıtlı park yok.</div><div class="mapwrap"><div id="carMap" class="map smallmap"></div></div><button class="primary full" onclick="locateCar()">ARABAMA DÖN</button></section>
+<section id="car" class="screen"><div class="head"><button class="back" onclick="go('home')">‹</button><div><div class="eyebrow">MY CAR</div><h2>Arabam</h2></div></div><div class="mapwrap"><div id="carMap" class="map smallmap"></div></div><div id="carInfo" class="card flat">Kayıtlı park konumu yok.</div><button class="primary full" onclick="showCar()">ARABAMI BUL</button></section>
 <section id="profile" class="screen"><div class="head"><div><div class="eyebrow">PROFILE</div><h2>Ayarlar</h2></div></div><div class="card featured"><b>Sürüş ve park tercihleri</b><p>ParkBuddy bu ayarlara göre seçenekleri sana daha uygun sıralar.</p></div><div class="card flat"><div class="setting"><div class="settingTop"><div><b>Görünüm</b><small>Açık, koyu veya sistem temasını kullan.</small></div></div><div class="chips"><button class="chip" data-theme-choice="light" onclick="setTheme('light')">LIGHT</button><button class="chip" data-theme-choice="dark" onclick="setTheme('dark')">DARK</button><button class="chip" data-theme-choice="system" onclick="setTheme('system')">AUTO</button></div></div><div class="setting"><b>Park önceliği</b><small>Sana en uygun planı nasıl seçelim?</small><select id="prefSelect" class="input" onchange="setPref(this.value)"><option value="balanced">Dengeli seçim</option><option value="near">En az yürüme</option><option value="capacity">Daha yüksek kapasite</option><option value="cheap">Daha uygun fiyat</option></select></div><div class="setting"><b>Maksimum yürüyüş</b><small>Bu sürenin üstündeki seçenekleri geriye atarız.</small><select id="walkSelect" class="input" onchange="setMaxWalk(this.value)"><option value="5">5 dakika</option><option value="10">10 dakika</option><option value="15">15 dakika</option><option value="20">20 dakika</option></select></div><div class="setting"><b>Saatlik bütçe</b><small>Fiyat biliniyorsa önerileri buna göre ayarlarız.</small><select id="budgetSelect" class="input" onchange="setBudget(this.value)"><option value="0">Limit yok</option><option value="5">5 PLN altı</option><option value="10">10 PLN altı</option><option value="15">15 PLN altı</option></select></div><div class="setting"><b>Araç tipi</b><small>Büyük araçlarda dar/kapalı alanları daha temkinli sıralarız.</small><select id="vehicleSelect" class="input" onchange="setVehicle(this.value)"><option value="standard">Standart</option><option value="large">SUV / büyük araç</option><option value="ev">Elektrikli araç</option></select></div><div class="setting"><div class="settingTop"><div><b>Önerileri iyileştir</b><small>Anonim geri bildirimlerle öneriler zamanla gelişsin.</small></div><button id="anonToggle" class="chip toggle" onclick="toggleAnonymous()">ON</button></div></div></div><div class="card blue"><b>Gizlilik</b><p>Konum rota, yakın park bulma ve arabana geri dönme özellikleri için kullanılır. Hesap oluşturmadan da çalışır.</p><div class="twoBtns"><button class="ghost" onclick="clearCar()">Arabamı sil</button><button class="danger" onclick="resetSettings()">Ayarları sıfırla</button></div></div></section>
 <nav class="nav"><button id="nav-home" class="active" onclick="go('home')"><strong>⌂</strong>HOME</button><button id="nav-explore" onclick="go('explore')"><strong>⌖</strong>EXPLORE</button><button id="nav-car" onclick="go('car')"><strong>▣</strong>MY CAR</button><button id="nav-profile" onclick="go('profile')"><strong>☰</strong>PROFILE</button></nav><div id="toast" class="toast"></div>
 </main>
@@ -47,7 +47,7 @@ function setVehicle(v){settings.vehicle=v;localStorage.setItem('parkbuddy_vehicl
 function toggleAnonymous(){settings.anonymous=!settings.anonymous;localStorage.setItem('parkbuddy_anonymous',settings.anonymous?'on':'off');syncProfile();toast('Kaydedildi')}
 function syncProfile(){if($('prefSelect'))$('prefSelect').value=settings.pref;if($('walkSelect'))$('walkSelect').value=String(settings.maxWalk);if($('budgetSelect'))$('budgetSelect').value=String(settings.budget);if($('vehicleSelect'))$('vehicleSelect').value=settings.vehicle;if($('anonToggle')){$('anonToggle').textContent=settings.anonymous?'ON':'OFF';$('anonToggle').classList.toggle('on',settings.anonymous)}}
 function resetSettings(){['parkbuddy_pref','parkbuddy_max_walk','parkbuddy_budget','parkbuddy_vehicle','parkbuddy_anonymous'].forEach(k=>localStorage.removeItem(k));settings.pref='balanced';settings.maxWalk=10;settings.budget=0;settings.vehicle='standard';settings.anonymous=true;syncProfile();rerank();toast('Ayarlar sıfırlandı')}
-function clearCar(){localStorage.removeItem('parkbuddy_car');initCar();toast('Park kaydı silindi')}
+function clearCar(){localStorage.removeItem('parkbuddy_car');if($('carInfo'))$('carInfo').textContent='Kayıtlı park konumu yok.';if(carMap){carMap.remove();carMap=null}toast('Park kaydı silindi')}
 function go(id){const screen=$(id);if(!screen)return;document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));screen.classList.add('active');document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));$('nav-'+(id==='explore'?'explore':id==='car'?'car':id==='profile'?'profile':'home'))?.classList.add('active');setTimeout(()=>{if(id==='explore'){initMap();renderMarkers()}if(id==='car')initCar();if(id==='route')routeMap?.resize();if(id==='profile')syncProfile()},80)}
 function geo(){return new Promise((ok,no)=>{if(!navigator.geolocation)return no(new Error('Konum desteklenmiyor'));navigator.geolocation.getCurrentPosition(p=>ok([p.coords.longitude,p.coords.latitude]),no,{enableHighAccuracy:true,timeout:10000})})}
 function typeLabel(t){return t==='park_and_ride'?'P+R':t==='municipal'?'Belediye':t==='underground'?'Yeraltı':t==='multi_storey'?'Katlı':t==='surface'?'Açık':'Otopark'}
@@ -80,9 +80,45 @@ function renderDetail(){const p=selectedParking;if(!p){toast('Park seçeneği bu
 function routeSelected(){if(!selectedParking){toast('Park seçeneği bulunamadı');return}dest={lon:Number(selectedParking.lon),lat:Number(selectedParking.lat),name:String(selectedParking.name||'Park konumu')};route()}
 async function route(){if(!dest||!Number.isFinite(dest.lat)||!Number.isFinite(dest.lon))return toast('Rota hedefi hazır değil');if(!mapReady())return;if(!pos){try{pos=await geo()}catch{return toast('Rota için konum izni gerekli')}}try{const r=await fetch('https://router.project-osrm.org/route/v1/driving/'+encodeURIComponent(pos[0])+','+encodeURIComponent(pos[1])+';'+encodeURIComponent(dest.lon)+','+encodeURIComponent(dest.lat)+'?overview=full&geometries=geojson');if(!r.ok)throw Error();const d=await r.json();const route=d.routes?.[0];if(!route?.geometry||route.geometry.type!=='LineString'||!Array.isArray(route.geometry.coordinates)||route.geometry.coordinates.length<2)throw Error();go('route');setTimeout(()=>drawRoute(route),120)}catch{toast('Rota bulunamadı')}}
 function drawRoute(r){if(!mapReady()||!r?.geometry)return toast('Rota çizilemedi');if(routeMap)routeMap.remove();routeMap=new maplibregl.Map({container:'routeMap',style:mapStyle,center:pos,zoom:13});routeMap.on('load',()=>{routeMap.addSource('r',{type:'geojson',data:{type:'Feature',geometry:r.geometry}});routeMap.addLayer({id:'r',type:'line',source:'r',paint:{'line-color':'#6d8cff','line-width':5}});$('placeName').textContent=dest.name;$('routeInfo').textContent=Math.round(r.duration/60)+' dk · '+(r.distance/1000).toFixed(1)+' km'})}
-async function saveCar(){try{const p=await geo();const local={lon:p[0],lat:p[1],time:Date.now(),name:dest?.name||'Park konumu'};localStorage.setItem('parkbuddy_car',JSON.stringify(local));try{const r=await fetch(API+'?action=park',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_id:deviceId(),lat:p[1],lon:p[0],label:local.name})});if(!r.ok)throw Error('API '+r.status)}catch(e){console.warn('Park session cloud save failed',e)}go('car')}catch{toast('GPS izni gerekli')}}
-async function initCar(){let c=null;try{const r=await fetch(API+'?action=latest&device_id='+encodeURIComponent(deviceId()));if(r.ok){const d=await r.json();const lon=Number(d.lon),lat=Number(d.lat),time=new Date(d.started_at).getTime();if(Number.isFinite(lon)&&Number.isFinite(lat)){c={lon,lat,time:Number.isFinite(time)?time:Date.now(),name:d.label||'Park konumu'};localStorage.setItem('parkbuddy_car',JSON.stringify(c))}}}catch(e){console.warn('Cloud latest failed',e)}if(!c){const raw=localStorage.getItem('parkbuddy_car');c=safeParse(raw,null);if(raw&&!c)localStorage.removeItem('parkbuddy_car')}if(!c||!Number.isFinite(Number(c.lon))||!Number.isFinite(Number(c.lat))){$('carState').textContent='Kayıtlı park yok.';if(carMap){carMap.remove();carMap=null}return}$('carState').innerHTML='<b>'+esc(c.name||'Park konumu')+'</b><p>'+esc(new Date(c.time||Date.now()).toLocaleString('pl-PL'))+'</p>';if(!mapReady())return;if(carMap)carMap.remove();carMap=new maplibregl.Map({container:'carMap',style:mapStyle,center:[Number(c.lon),Number(c.lat)],zoom:15});carMap.on('load',()=>{const e=document.createElement('div');e.className='marker';e.textContent='AUTO';new maplibregl.Marker({element:e}).setLngLat([Number(c.lon),Number(c.lat)]).addTo(carMap)})}
-function locateCar(){initCar();toast('Park konumu açıldı')}
+async function saveCar(){
+  try{
+    const p=await geo();
+    const local={lon:p[0],lat:p[1],time:Date.now(),name:dest?.name||'Park konumu'};
+    localStorage.setItem('parkbuddy_car',JSON.stringify(local));
+    try{
+      const r=await fetch(API+'?action=park',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_id:deviceId(),lat:p[1],lon:p[0],label:local.name})});
+      if(!r.ok) throw new Error('API '+r.status);
+    }catch(e){console.warn('Park session cloud save failed',e)}
+    go('car')
+  }catch{toast('GPS izni gerekli')}
+}
+async function initCar(){
+  let c=null;
+  try{
+    const r=await fetch(API+'?action=latest&device_id='+encodeURIComponent(deviceId()));
+    if(r.ok){
+      const d=await r.json();
+      c={lon:+d.lon,lat:+d.lat,time:new Date(d.started_at).getTime(),name:d.label||'Park konumu'};
+      localStorage.setItem('parkbuddy_car',JSON.stringify(c));
+    }
+  }catch(e){console.warn('Cloud latest failed',e)}
+  if(!c)c=safeParse(localStorage.getItem('parkbuddy_car'),null);
+  if(!c){
+    $('carInfo').textContent='Kayıtlı park konumu yok.';
+    if(carMap){carMap.remove();carMap=null}
+    return
+  }
+  if(!mapReady())return;
+  if(carMap){carMap.remove();carMap=null}
+  carMap=new maplibregl.Map({container:'carMap',style:mapStyle,center:[Number(c.lon),Number(c.lat)],zoom:15});
+  carMap.on('load',()=>{
+    const e=document.createElement('div');e.className='marker';e.textContent='AUTO';
+    new maplibregl.Marker({element:e}).setLngLat([Number(c.lon),Number(c.lat)]).addTo(carMap);
+    setTimeout(()=>carMap?.resize(),0);
+  });
+  $('carInfo').textContent=(c.name||'Park konumu')+' · '+new Date(c.time||Date.now()).toLocaleString('pl-PL');
+}
+function showCar(){go('car');setTimeout(()=>{initCar()},120)}
 applyTheme();syncProfile();loadCities().then(loadParkings);
 </script>
 </body>
