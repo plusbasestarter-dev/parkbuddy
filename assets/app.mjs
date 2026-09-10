@@ -242,13 +242,13 @@ async function startRoute(target,mode='driving',origin=null,forCar=false){
 
 function renderCar(){
   const c=getCar(),hasCar=!!c&&!c.deleted;
-  $('carEmpty').hidden=hasCar||picking;$('carMapWrap').hidden=!hasCar&&!picking;$('carInfo').hidden=!hasCar||picking;$('carPicking').hidden=!picking;$('carActions').hidden=picking;$('findCar').hidden=!hasCar;$('deleteCar').hidden=!hasCar;
+  $('carEmpty').hidden=hasCar||picking;$('carMapWrap').hidden=false;$('carInfo').hidden=!hasCar||picking;$('carPicking').hidden=!picking;$('carActions').hidden=picking;$('findCar').hidden=!hasCar;$('deleteCar').hidden=!hasCar;
   $('carSyncStatus').textContent=c?.pending?t(c.deleted?'deletePending':'savedLocal'):'';
   if(picking){requestAnimationFrame(renderPickedPoint);return;}
   if(hasCar){
     $('carInfo').innerHTML=`<b>${esc(c.name||t('savedCar'))}</b><p class="carDate">${esc(new Date(c.time).toLocaleString(language))}</p>`;
     requestAnimationFrame(()=>{if(currentScreen!=='car'||picking)return;const m=ensureMap('carMap',c);mapLayers.carMap?.clearLayers();addPoint('carMap',c,'car',t('savedCar'));m?.setView(latLng(c),16);});
-  }else mapLayers.carMap?.clearLayers();
+  }else requestAnimationFrame(()=>{if(currentScreen!=='car'||picking)return;const center=userPosition||city();const m=ensureMap('carMap',center,14);mapLayers.carMap?.clearLayers();m?.setView(latLng(center),14);});
 }
 function pickCar(initial=null){go('car');picking=true;pickedPoint=initial&&isPoint(initial)?initial:null;$('saveSelected').disabled=!pickedPoint;renderCar();requestAnimationFrame(()=>{const center=pickedPoint||getCar()||userPosition||city();const m=ensureMap('carMap',isPoint(center)?center:city(),15);mapLayers.carMap?.clearLayers();m?.setView(latLng(isPoint(center)?center:city()),15);renderPickedPoint();});}
 function renderPickedPoint(){if(!picking)return;ensureMap('carMap',pickedPoint||city(),15);mapLayers.carMap?.clearLayers();if(pickedPoint)addPoint('carMap',pickedPoint,'car',t('selectedSpot'));$('saveSelected').disabled=!pickedPoint;}
