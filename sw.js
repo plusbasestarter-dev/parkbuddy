@@ -1,5 +1,5 @@
 const PREFIX='parkbuddy-'+encodeURIComponent(new URL(self.registration.scope).pathname)+'-';
-const CACHE=PREFIX+'rc4';
+const CACHE=PREFIX+'rc4.1';
 const SHELL=['./','./index.html','./assets/styles.css?v=rc4','./assets/app.mjs?v=rc4','./assets/core.mjs?v=rc4','./assets/i18n.mjs?v=rc4','./assets/vendor/leaflet.js','./assets/vendor/leaflet.css'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith(PREFIX)&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
