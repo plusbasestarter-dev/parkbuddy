@@ -1,10 +1,12 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2.116.0'
+import {validPoint,numberParam,credentialHash,validateState} from './http.mjs'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-parkbuddy-admin-key',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-parkbuddy-admin-key, x-parkbuddy-token',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Content-Type': 'application/json'
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store'
 }
 
 function json(data: unknown, status = 200) {
@@ -19,7 +21,7 @@ function isAdminRequest(req: Request) {
 
 function scoreParking(p: any, radius: number) {
   const distance_m = Math.round(Number(p.distance_m || 0))
-  const walk_minutes = Math.max(1, Math.round(distance_m / 80))
+  const walk_minutes = null // Never present straight-line distance as walking time.
   const capacity = Math.max(0, Number(p.capacity || 0))
   const proximity = Math.max(0, 1 - distance_m / radius)
   const capacityNorm = Math.min(capacity / 500, 1)
@@ -120,11 +122,8 @@ async function syncOsmBaseline(db: any, cityId: string, radiusParam: number) {
     })
   }
 
-  const { error: deleteError } = await db.from('parking_locations')
-    .delete()
-    .eq('city_id', city.id)
-    .eq('source', 'OpenStreetMap')
-  if (deleteError) throw new Error(deleteError.message)
+  if(!rows.length)throw new Error('No usable parking records; existing locations preserved')
+  // Upsert before pruning: a failed upstream or batch can never empty the city.
 
   for (let i = 0; i < rows.length; i += 400) {
     const chunk = rows.slice(i, i + 400)
@@ -132,6 +131,7 @@ async function syncOsmBaseline(db: any, cityId: string, radiusParam: number) {
     if (error) throw new Error(error.message)
   }
 
+  // Stale-row removal is deliberately deferred until an atomic refresh is available.
   const { count } = await db.from('parking_locations')
     .select('id', { count: 'exact', head: true })
     .eq('city_id', city.id)
@@ -146,164 +146,142 @@ async function syncOsmBaseline(db: any, cityId: string, radiusParam: number) {
   return { ok: true, city_id: city.id, city: city.name, synced: rows.length, total: count || rows.length, source: 'OpenStreetMap' }
 }
 
-Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
+const upstreamCache = new Map<string,{expires:number,data:any}>()
+const userAgent = 'ParkBuddy/1.0 (https://github.com/plusbasestarter-dev/parkbuddy)'
+const walkRouter = (Deno.env.get('PARKBUDDY_WALK_ROUTER_URL') || 'https://routing.openstreetmap.de/routed-foot').replace(/\/$/,'')
+const driveRouter = (Deno.env.get('PARKBUDDY_DRIVE_ROUTER_URL') || 'https://routing.openstreetmap.de/routed-car').replace(/\/$/,'')
+const geocoder = (Deno.env.get('PARKBUDDY_GEOCODER_URL') || 'https://nominatim.openstreetmap.org/search').replace(/\/$/,'')
 
-  const url = new URL(req.url)
-  const action = url.searchParams.get('action') || 'health'
-
-  const secretKeys = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') || '{}')
-  const secret = secretKeys['default'] || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')
-  if (!secret || !supabaseUrl) return json({ ok: false, error: 'Server credentials unavailable' }, 500)
-
-  const db = createClient(supabaseUrl, secret)
-
-  if (action === 'health' && req.method === 'GET') {
-    return json({ ok: true, service: 'parkbuddy-poland-edge', scope: 'poland-multicity' })
+async function upstream(db:any,url:string,service:string,ttl=60000) {
+  const cached=upstreamCache.get(url)
+  if(cached && cached.expires>Date.now())return cached.data
+  let allowed=false
+  for(let attempt=0;attempt<3;attempt++){
+    const slot=await db.rpc('parkbuddy_claim_service_slot',{p_service:service})
+    if(slot.error)throw new Error('Upstream unavailable')
+    if(slot.data){allowed=true;break}
+    if(attempt<2)await new Promise(resolve=>setTimeout(resolve,1100))
   }
+  if(!allowed)throw new Error('Upstream temporarily busy')
+  const r=await fetch(url,{headers:{'User-Agent':userAgent,'Accept':'application/json'},signal:AbortSignal.timeout(7500)})
+  if(!r.ok)throw new Error('Upstream unavailable')
+  const data=await r.json()
+  if(upstreamCache.size>=150)upstreamCache.delete(upstreamCache.keys().next().value!)
+  upstreamCache.set(url,{expires:Date.now()+ttl,data})
+  return data
+}
+function bounded(value:number,min:number,max:number,fallback:number){return Number.isFinite(value)?Math.min(max,Math.max(min,Math.floor(value))):fallback}
+function coord(lat:number,lon:number){return lon.toFixed(6)+','+lat.toFixed(6)}
+function publicState(s:any){return s?{revision:Number(s.revision),deleted:s.deleted,lat:s.lat,lon:s.lon,name:s.label||'',time:s.recorded_at?new Date(s.recorded_at).getTime():null}:null}
+async function addWalking(db:any,rows:any[],lat:number,lon:number){
+  if(!rows.length)return rows
+  const points=[coord(lat,lon),...rows.map(p=>coord(Number(p.lat),Number(p.lon)))].join(';')
+  const sources=rows.map((_,i)=>i+1).join(';')
+  try{
+    const data=await upstream(db,walkRouter+'/table/v1/foot/'+points+'?sources='+sources+'&destinations=0&annotations=duration,distance','routing',300000)
+    if(data.code!=='Ok')throw Error('No walking matrix')
+    return rows.map((p,i)=>{
+      const seconds=data.durations?.[i]?.[0],distance=data.distances?.[i]?.[0]
+      // Reject points snapped too far from their true location.
+      const snapped=(data.sources?.[i]?.distance??Infinity)<=100 && (data.destinations?.[0]?.distance??Infinity)<=100
+      if(!snapped||typeof seconds!=='number'||!Number.isFinite(seconds)||seconds<0||typeof distance!=='number')return {...p,walk_minutes:null,walk_seconds:null,walk_distance_m:null,walk_source:null}
+      return {...p,walk_minutes:Math.max(1,Math.ceil(seconds/60)),walk_seconds:seconds,walk_distance_m:distance,walk_source:'route'}
+    })
+  }catch{return rows.map(p=>({...p,walk_minutes:null,walk_seconds:null,walk_distance_m:null,walk_source:null}))}
+}
 
-  if (action === 'cities' && req.method === 'GET') {
-    const { data, error } = await db.from('cities')
-      .select('id,name,country_code,lat,lon,status,parking_count,live_data_status,coverage_tier')
-      .order('parking_count', { ascending: false })
-      .order('name', { ascending: true })
-    if (error) return json({ error: error.message }, 500)
-    return json({ country: 'PL', cities: data || [] })
-  }
+Deno.serve(async (req:Request)=>{
+  if(req.method==='OPTIONS')return new Response('ok',{headers:cors})
+  const url=new URL(req.url),action=url.searchParams.get('action')||'health'
+  try{
+    const secretKeys=JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')||'{}')
+    const secret=secretKeys.default||Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    const supabaseUrl=Deno.env.get('SUPABASE_URL')
+    if(!secret||!supabaseUrl)return json({error:'Server unavailable'},503)
+    const db=createClient(supabaseUrl,secret,{auth:{persistSession:false,autoRefreshToken:false}})
+    if(action==='health'&&req.method==='GET')return json({ok:true,service:'parkbuddy-poland-edge',version:'1.0.0-rc4'})
 
-  if (action === 'official-parking' && req.method === 'GET') {
-    const cityId = url.searchParams.get('city_id') || 'warszawa'
-    const { data, error } = await db.from('parking_locations')
-      .select('id,name,city,city_id,parking_type,currency,price_per_hour,lat,lon,capacity,official_url,data_confidence,source,source_updated_at')
-      .eq('city_id', cityId)
-      .order('name', { ascending: true })
-    if (error) return json({ error: error.message }, 500)
-    return json({ city_id: cityId, fetched_at: new Date().toISOString(), parkings: data || [] })
-  }
-
-  if (action === 'sync-osm-baseline' && req.method === 'POST') {
-    if (!isAdminRequest(req)) return json({ error: 'Admin only' }, 403)
-    try {
-      const cityId = url.searchParams.get('city_id') || ''
-      if (!cityId) return json({ error: 'city_id required' }, 400)
-      const radius = Number(url.searchParams.get('radius') || 12000)
-      const result = await syncOsmBaseline(db, cityId, radius)
-      if ((result as any).status) return json({ error: (result as any).error }, (result as any).status)
-      return json(result)
-    } catch (error) {
-      return json({ error: String(error) }, 500)
+    // Location ownership is proven with an unguessable bearer credential in a header.
+    // URL/body device IDs are never an authority and are no longer accepted.
+    if(action==='park'||action==='latest'){
+      const owner=await credentialHash(req.headers.get('x-parkbuddy-token'))
+      if(!owner)return json({error:'Private parking credential required'},401)
+      if(action==='latest'&&req.method==='GET'){
+        const {data,error}=await db.from('parking_state').select('revision,deleted,lat,lon,label,recorded_at').eq('owner_hash',owner).maybeSingle()
+        if(error)return json({error:'Parking state unavailable'},503)
+        return json({state:publicState(data)})
+      }
+      if(action==='park'&&req.method==='POST'){
+        if(Number(req.headers.get('content-length')||0)>4096)return json({error:'Request too large'},413)
+        const raw=await req.text();if(raw.length>4096)return json({error:'Request too large'},413)
+        let body:any;try{body=JSON.parse(raw)}catch{return json({error:'Invalid JSON'},400)}
+        if(!validateState(body))return json({error:'Invalid parking state'},400)
+        const {data,error}=await db.rpc('parkbuddy_write_state',{
+          p_owner_hash:owner,p_revision:body.revision,p_deleted:body.deleted,
+          p_lat:body.deleted?null:body.lat,p_lon:body.deleted?null:body.lon,
+          p_label:body.deleted?null:body.name,p_recorded_ms:body.deleted?null:body.time
+        })
+        if(error)return json({error:'Parking state could not be saved'},503)
+        return json({state:data})
+      }
+      return json({error:'Method not allowed'},405)
     }
-  }
-
-  if (action === 'sync-next-baseline' && req.method === 'POST') {
-    if (!isAdminRequest(req)) return json({ error: 'Admin only' }, 403)
-    try {
-      const { data: nextCity, error } = await db.from('cities')
-        .select('id,name')
-        .eq('status', 'planned')
-        .order('name', { ascending: true })
-        .limit(1)
-        .maybeSingle()
-      if (error) return json({ error: error.message }, 500)
-      if (!nextCity) return json({ ok: true, done: true, message: 'No planned cities remain' })
-      const result = await syncOsmBaseline(db, nextCity.id, 12000)
-      return json(result)
-    } catch (error) {
-      return json({ error: String(error) }, 500)
+    if(action==='cities'&&req.method==='GET'){
+      const {data,error}=await db.from('cities').select('id,name,country_code,lat,lon,status,parking_count').order('name')
+      if(error)return json({error:'Cities unavailable'},503)
+      return json({cities:data||[]})
     }
-  }
-
-  if (action === 'nearby' && req.method === 'GET') {
-    const lat = Number(url.searchParams.get('lat'))
-    const lon = Number(url.searchParams.get('lon'))
-    const radius = Math.min(Math.max(Number(url.searchParams.get('radius') || 5000), 250), 15000)
-    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 8), 1), 20)
-    const cityId = url.searchParams.get('city_id') || null
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return json({ error: 'lat and lon are required' }, 400)
-
-    const { data, error } = await db.rpc('nearby_parking', {
-      p_lat: lat,
-      p_lon: lon,
-      p_radius_m: radius,
-      p_limit: limit,
-      p_city_id: cityId
-    })
-    if (error) return json({ error: error.message }, 500)
-
-    const rows = (data || []).map((p: any) => scoreParking(p, radius))
-      .sort((a: any, b: any) => b.decision_score - a.decision_score || a.distance_m - b.distance_m)
-
-    return json({
-      destination: { lat, lon },
-      city_id: cityId,
-      radius_m: radius,
-      count: rows.length,
-      parkings: rows,
-      score_version: 'door-to-door-v1',
-      note: 'Score uses distance, capacity, data confidence and price availability. It does not claim live occupancy.'
-    })
-  }
-
-  if (action === 'plan' && req.method === 'GET') {
-    const lat = Number(url.searchParams.get('lat'))
-    const lon = Number(url.searchParams.get('lon'))
-    const radius = Math.min(Math.max(Number(url.searchParams.get('radius') || 5000), 500), 15000)
-    const cityId = url.searchParams.get('city_id') || null
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return json({ error: 'lat and lon are required' }, 400)
-
-    const { data, error } = await db.rpc('nearby_parking', {
-      p_lat: lat,
-      p_lon: lon,
-      p_radius_m: radius,
-      p_limit: 12,
-      p_city_id: cityId
-    })
-    if (error) return json({ error: error.message }, 500)
-
-    const scored = (data || []).map((p: any) => scoreParking(p, radius))
-      .sort((a: any, b: any) => b.door_to_door_score - a.door_to_door_score || a.distance_m - b.distance_m)
-
-    return json({
-      destination: { lat, lon },
-      city_id: cityId,
-      primary: scored[0] || null,
-      plan_b: scored[1] || null,
-      alternatives: scored.slice(2, 6),
-      score_version: 'door-to-door-v1',
-      disclaimer: 'This is not live occupancy prediction.'
-    })
-  }
-
-  if (action === 'park' && req.method === 'POST') {
-    const body = await req.json().catch(() => null)
-    if (!body || typeof body.device_id !== 'string' || body.device_id.length < 8) return json({ error: 'Invalid device_id' }, 400)
-    const lat = Number(body.lat)
-    const lon = Number(body.lon)
-    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) return json({ error: 'Invalid coordinates' }, 400)
-    const { data, error } = await db.from('parking_sessions').insert({
-      device_id: body.device_id.slice(0, 128),
-      label: typeof body.label === 'string' ? body.label.slice(0, 240) : null,
-      lat,
-      lon
-    }).select('id,device_id,label,lat,lon,started_at').single()
-    if (error) return json({ error: error.message }, 500)
-    return json(data, 201)
-  }
-
-  if (action === 'latest' && req.method === 'GET') {
-    const deviceId = url.searchParams.get('device_id') || ''
-    if (deviceId.length < 8) return json({ error: 'Invalid device_id' }, 400)
-    const { data, error } = await db.from('parking_sessions')
-      .select('id,device_id,label,lat,lon,started_at')
-      .eq('device_id', deviceId)
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (error) return json({ error: error.message }, 500)
-    if (!data) return json({ error: 'No parking session' }, 404)
-    return json(data)
-  }
-
-  return json({ error: 'Not found' }, 404)
+    if(action==='official-parking'&&req.method==='GET'){
+      const cityId=url.searchParams.get('city_id')||'warszawa'
+      const {data,error}=await db.from('parking_locations').select('id,name,city,city_id,parking_type,currency,price_per_hour,lat,lon,capacity,source_updated_at').eq('city_id',cityId).order('name')
+      if(error)return json({error:'Parking locations unavailable'},503)
+      return json({city_id:cityId,parkings:data||[]})
+    }
+    if(action==='search'&&req.method==='GET'){
+      const q=(url.searchParams.get('q')||'').trim(),cityId=url.searchParams.get('city_id')||'warszawa'
+      if(!q||q.length>200)return json({error:'Invalid search'},400)
+      const {data:city}=await db.from('cities').select('name,lat,lon').eq('id',cityId).maybeSingle()
+      if(!city)return json({error:'Unknown city'},400)
+      const lang=['pl','en','tr'].includes(url.searchParams.get('lang')||'')?url.searchParams.get('lang')!:'pl'
+      const searchUrl=new URL(geocoder)
+      searchUrl.search=new URLSearchParams({format:'jsonv2',limit:'3',countrycodes:'pl','accept-language':lang,q:q+', '+city.name,viewbox:`${city.lon-0.4},${city.lat+0.3},${city.lon+0.4},${city.lat-0.3}`}).toString()
+      const places=await upstream(db,searchUrl.toString(),'geocoding',3600000)
+      return json({places:Array.isArray(places)?places.map(p=>({lat:Number(p.lat),lon:Number(p.lon),display_name:p.display_name})):[]})
+    }
+    if((action==='nearby'||action==='plan')&&req.method==='GET'){
+      const lat=numberParam(url.searchParams,'lat'),lon=numberParam(url.searchParams,'lon')
+      if(!validPoint(lat,lon))return json({error:'Valid coordinates required'},400)
+      const radius=bounded(numberParam(url.searchParams,'radius'),250,15000,5000)
+      const limit=bounded(numberParam(url.searchParams,'limit'),1,20,12)
+      const cityId=url.searchParams.get('city_id')||null
+      const {data,error}=await db.rpc('nearby_parking',{p_lat:lat,p_lon:lon,p_radius_m:radius,p_limit:limit,p_city_id:cityId})
+      if(error)return json({error:'Nearby parking unavailable'},503)
+      const rows=(await addWalking(db,(data||[]).map((p:any)=>scoreParking(p,radius)),lat,lon)).sort((a:any,b:any)=>b.decision_score-a.decision_score||a.distance_m-b.distance_m)
+      if(action==='plan')return json({primary:rows[0]||null,plan_b:rows[1]||null,alternatives:rows.slice(2),destination:{lat,lon}})
+      return json({parkings:rows,city_id:cityId,destination:{lat,lon},count:rows.length})
+    }
+    if(action==='route'&&req.method==='GET'){
+      const a=numberParam(url.searchParams,'from_lat'),b=numberParam(url.searchParams,'from_lon'),c=numberParam(url.searchParams,'to_lat'),d=numberParam(url.searchParams,'to_lon')
+      if(!validPoint(a,b)||!validPoint(c,d))return json({error:'Valid coordinates required'},400)
+      const mode=url.searchParams.get('mode');if(mode!=='walking'&&mode!=='driving')return json({error:'Invalid travel mode'},400)
+      const router=mode==='walking'?walkRouter:driveRouter,profile=mode==='walking'?'foot':'driving'
+      const routeUrl=router+'/route/v1/'+profile+'/'+coord(a,b)+';'+coord(c,d)+'?overview=full&geometries=geojson&steps=false'
+      const data=await upstream(db,routeUrl,'routing',60000)
+      const route=data.routes?.[0]
+      if(data.code!=='Ok'||route?.geometry?.type!=='LineString'||!Array.isArray(route.geometry.coordinates)||route.geometry.coordinates.length<2||!route.geometry.coordinates.every((p:any)=>Array.isArray(p)&&validPoint(p[1],p[0]))||!Number.isFinite(route.duration)||route.duration<0||!Number.isFinite(route.distance)||route.distance<0||!Array.isArray(data.waypoints)||data.waypoints.length!==2||data.waypoints.some((p:any)=>!Number.isFinite(p.distance)||p.distance>100))return json({error:'Route unavailable'},404)
+      return json({route:{geometry:route.geometry,duration:route.duration,distance:route.distance},mode})
+    }
+    if((action==='sync-osm-baseline'||action==='sync-next-baseline')&&req.method==='POST'){
+      if(!isAdminRequest(req))return json({error:'Admin only'},403)
+      let cityId=url.searchParams.get('city_id')||''
+      if(action==='sync-next-baseline'){
+        const {data:next}=await db.from('cities').select('id').eq('status','planned').order('name').limit(1).maybeSingle()
+        if(!next)return json({ok:true,done:true});cityId=next.id
+      }
+      if(!cityId)return json({error:'city_id required'},400)
+      const result=await syncOsmBaseline(db,cityId,Number(url.searchParams.get('radius')||12000))
+      return json(result,(result as any).status||200)
+    }
+    return json({error:'Not found'},404)
+  }catch{return json({error:'Service temporarily unavailable. Please retry.'},503)}
 })

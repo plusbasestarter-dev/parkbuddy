@@ -1,0 +1,15 @@
+{
+  "name": "parkbuddy-poland",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0-rc4",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "sync:frontend": "node scripts/sync-frontend.mjs",
+    "validate": "node scripts/validate.mjs",
+    "test:live": "node tests/live-smoke.mjs"
+  },
+  "devDependencies": {
+    "linkedom": "0.18.12"
+  }
+}
