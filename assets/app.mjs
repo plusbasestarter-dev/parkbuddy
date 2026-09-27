@@ -1,5 +1,5 @@
-import {VERSION, CAR_KEY, normalizePoint, validRows, validRoute, isPoint, isGeneratedName, escapeHTML as esc, parseJSON, readCar, writeCar, nextRevision, reconcileCar, ownerToken, knownPrice, walkingMinutes, distanceMeters, rankParkings, navigationURL} from './core.mjs?v=rc5.1';
-import {translator} from './i18n.mjs?v=rc5.1';
+import {VERSION, CAR_KEY, normalizePoint, validRows, validRoute, isPoint, isGeneratedName, escapeHTML as esc, parseJSON, readCar, writeCar, nextRevision, reconcileCar, ownerToken, knownPrice, walkingMinutes, distanceMeters, rankParkings, navigationURL} from './core.mjs?v=rc6';
+import {translator} from './i18n.mjs?v=rc6';
 
 const API='https://oespoljjeslpsnhjwsra.supabase.co/functions/v1/parkbuddy-api';
 const SUPABASE_URL='https://oespoljjeslpsnhjwsra.supabase.co';
@@ -16,7 +16,10 @@ if(![0,5,10,15].includes(settings.budget))settings.budget=0;
 let language=stored('parkbuddy_language','pl');
 if(!['pl','tr','en'].includes(language))language='pl';
 let t=translator(language), currentCityId=stored('parkbuddy_city','warszawa');
-let cities=[],parkings=[],nearby=[],destination=null,selectedParking=null,currentScreen='home',currentFilter='all';
+let cities=[],parkings=[],countryParkings=[],nearby=[],destination=null,selectedParking=null,currentScreen='home',currentFilter='all';
+let mapScope='city',mapPriceFilter='all',countryLoadState='idle',exploreListLimit=40;
+const POLAND_CENTER={lat:52.05,lon:19.2};
+const recentPriceUpdates=new Set();
 let cityRequest=0,searchRequest=0,routeRequest=0,cityAbort=null,searchAbort=null,routeAbort=null;
 let maps={},mapLayers={},userPosition=null,routeContext=null,picking=false,pickedPoint=null,toastTimer;
 let syncPromise=null,syncAgain=false,historyDepth=0,geoBusy=false,geoRequest=0,syncRetry=null,syncDelay=2000;
@@ -53,6 +56,72 @@ function priceText(p){
   }else return t('priceUnknown');
   const status=String(p.price_freshness_status||'');
   return status==='review'||status==='unknown'?`${base} · ${t('priceNeedsReview')}`:status==='stale'||status==='error'?`${base} · ${t('priceStale')}`:base;
+}
+function hasCurrentPrice(p){return String(p.price_freshness_status||'')==='current'&&hasDisplayPrice(p);}
+function isFreePrice(p){if(!hasCurrentPrice(p))return false;return rawPrice(p)===0||rawPrimaryPrice(p)===0;}
+function markerPriceLabel(p){
+  if(!hasCurrentPrice(p))return 'P';
+  const n=rawPrice(p)??rawPrimaryPrice(p);
+  if(n===0)return t('freeShort');
+  return `${Number(n).toLocaleString(language,{maximumFractionDigits:1})} zł`;
+}
+function priceClass(p){
+  const status=String(p.price_freshness_status||'');
+  if(status==='review'||status==='stale'||status==='error')return 'review';
+  if(!hasCurrentPrice(p))return 'unknown';
+  return isFreePrice(p)?'free':'current';
+}
+function mapRows(){return mapScope==='country'?countryParkings:parkings;}
+function passesTypeFilter(p){return currentFilter==='all'||(currentFilter==='structured'?['underground','multi_storey'].includes(p.parking_type):p.parking_type===currentFilter);}
+function passesPriceFilter(p){
+  if(mapPriceFilter==='current')return hasCurrentPrice(p);
+  if(mapPriceFilter==='free')return isFreePrice(p);
+  if(mapPriceFilter==='unknown')return !hasCurrentPrice(p);
+  return true;
+}
+function filteredMapRows(){return mapRows().filter(p=>passesTypeFilter(p)&&passesPriceFilter(p));}
+function pricePill(p){return `<span class="pricePill ${priceClass(p)}">${esc(hasCurrentPrice(p)?markerPriceLabel(p):t('priceUnknown'))}</span>`;}
+function renderExploreSummary(){
+  const rows=mapRows(),shown=filteredMapRows(),priced=rows.filter(hasCurrentPrice).length;
+  if($('exploreStats'))$('exploreStats').textContent=t('mapStats',{shown:shown.length,total:rows.length,priced});
+  if($('exploreListCount'))$('exploreListCount').textContent=t('options',{n:shown.length});
+}
+function renderExploreList(){
+  if(!$('exploreParkingList'))return;
+  const rows=filteredMapRows().slice().sort((a,b)=>{
+    if(mapScope==='country'){
+      const cityCmp=String(a.city||a.city_id||'').localeCompare(String(b.city||b.city_id||''),language);
+      if(cityCmp)return cityCmp;
+    }
+    return Number(hasCurrentPrice(b))-Number(hasCurrentPrice(a))||parkingName(a).localeCompare(parkingName(b),language);
+  });
+  const visible=rows.slice(0,exploreListLimit);
+  $('exploreParkingList').innerHTML=visible.length?visible.map(parkingRow).join(''):`<p>${esc(t('noResults'))}</p>`;
+  $('loadMoreParkings').hidden=visible.length>=rows.length;
+  renderExploreSummary();
+}
+async function loadCountryParkings(){
+  if(countryLoadState==='loading'||countryParkings.length)return;
+  countryLoadState='loading';
+  $('exploreParkingList').innerHTML=`<div class="skeletonStack"><span></span><span></span><span></span></div>`;
+  $('exploreStats').textContent=t('countryLoading');
+  try{
+    const data=await api('parking-map',{scope:'country'},{timeoutMs:25000});
+    countryParkings=validRows(data.parkings);countryLoadState='ready';
+  }catch{countryLoadState='error';toast(t('loadError'));}
+}
+async function setMapScope(scope){
+  mapScope=scope==='country'?'country':'city';exploreListLimit=40;
+  document.querySelectorAll('[data-map-scope]').forEach(b=>{const on=b.dataset.mapScope===mapScope;b.classList.toggle('on',on);b.setAttribute('aria-pressed',String(on));});
+  if(mapScope==='country'){
+    $('exploreTitle').textContent=t('countryTitle');
+    ensureMap('mapbox',POLAND_CENTER,6)?.setView(latLng(POLAND_CENTER),6);
+    await loadCountryParkings();
+  }else{
+    $('exploreTitle').textContent=city().name;
+    ensureMap('mapbox',city(),11.5)?.setView(latLng(city()),11.5);
+  }
+  renderMarkers();renderExploreList();
 }
 function toast(message){$('toast').textContent=message;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),4200);}
 function persist(key,value){try{localStorage.setItem(key,String(value));return true;}catch{toast(t('storageError'));return false;}}
@@ -98,7 +167,7 @@ function visibleScreen(id){
   if(id==='profile')syncProfile();
   if(id==='route'&&routeContext)renderRouteText();
   if(id==='car'){renderCar();void syncCar();}
-  requestAnimationFrame(()=>{if(id==='explore'){ensureMap('mapbox',city(),11.5);renderMarkers();}if(id==='car'&&maps.carMap)maps.carMap.invalidateSize({pan:false});if(id==='route'&&maps.routeMap)maps.routeMap.invalidateSize({pan:false});});
+  requestAnimationFrame(()=>{if(id==='explore'){const center=mapScope==='country'?POLAND_CENTER:city(),zoom=mapScope==='country'?6:11.5;ensureMap('mapbox',center,zoom);renderMarkers();renderExploreList();}if(id==='car'&&maps.carMap)maps.carMap.invalidateSize({pan:false});if(id==='route'&&maps.routeMap)maps.routeMap.invalidateSize({pan:false});});
 }
 function go(id){if(id===currentScreen)return visibleScreen(id);historyDepth++;history.pushState({parkbuddy:true,screen:id,depth:historyDepth},'');visibleScreen(id);}
 function back(){if(historyDepth>0)history.back();else visibleScreen('home');}
@@ -106,16 +175,17 @@ history.replaceState({parkbuddy:true,screen:'home',depth:0},'');
 window.addEventListener('popstate',e=>{historyDepth=e.state?.depth||0;visibleScreen(e.state?.screen||'home');});
 
 async function api(action,params={},options={}){
-  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),12000);
-  const abort=()=>controller.abort();options.signal?.addEventListener('abort',abort,{once:true});if(options.signal?.aborted)controller.abort();
+  const {signal:externalSignal,timeoutMs=12000,...fetchOptions}=options;
+  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),timeoutMs);
+  const abort=()=>controller.abort();externalSignal?.addEventListener('abort',abort,{once:true});if(externalSignal?.aborted)controller.abort();
   try{
     const url=new URL(API);url.search=new URLSearchParams({action,...params}).toString();
-    const headers={...options.headers};if(options.body)headers['Content-Type']='application/json';
-    const r=await fetch(url,{...options,headers,cache:'no-store',signal:controller.signal});
+    const headers={...fetchOptions.headers};if(fetchOptions.body)headers['Content-Type']='application/json';
+    const r=await fetch(url,{...fetchOptions,headers,cache:'no-store',signal:controller.signal});
     const payload=await r.json().catch(()=>({}));
     if(!r.ok){const e=new Error(payload.error||'Request failed');e.status=r.status;throw e;}
     return payload;
-  }finally{clearTimeout(timeout);options.signal?.removeEventListener('abort',abort);}
+  }finally{clearTimeout(timeout);externalSignal?.removeEventListener('abort',abort);}
 }
 async function loadCities(){
   try{const data=await api('cities');cities=validRows(data.cities).filter(c=>typeof c.id==='string'&&typeof c.name==='string').sort((a,b)=>a.name.localeCompare(b.name,'pl'));try{localStorage.setItem('parkbuddy_cities_cache',JSON.stringify(cities));}catch{}}
@@ -138,7 +208,7 @@ async function loadParkings(){
     if(!parkings.length){$('homeParkingList').innerHTML=`<p>${esc(t('loadError'))}</p><button class="ghost" data-action="reloadCity">${esc(t('retry'))}</button>`;$('parkingCount').textContent='';syncProfile();return;}
     toast(t('localCache'));
   }
-  $('parkingCount').textContent=t('options',{n:parkings.length});renderHome();renderMarkers();syncProfile();
+  $('parkingCount').textContent=t('options',{n:parkings.length});renderHome();renderMarkers();renderExploreList();syncProfile();
 }
 async function changeCity(id){
   if(!cities.some(c=>c.id===id))return;
@@ -146,10 +216,11 @@ async function changeCity(id){
   destination=null;selectedParking=null;nearby=[];routeContext=null;parkings=[];
   searchPlaces=[];searchResultHost=null;document.querySelectorAll('.searchResults').forEach(el=>el.replaceChildren());setSearchBusy(false);
   $('q').value='';$('exploreQ').value='';$('searchStatus').textContent='';$('decisionPlan').replaceChildren();$('nearbyList').replaceChildren();
-  mapLayers.mapbox?.clearLayers();maps.mapbox?.setView(latLng(city()),11.5);await loadParkings();
+  mapScope='city';exploreListLimit=40;document.querySelectorAll('[data-map-scope]').forEach(b=>{const on=b.dataset.mapScope==='city';b.classList.toggle('on',on);b.setAttribute('aria-pressed',String(on));});mapLayers.mapbox?.clearLayers();maps.mapbox?.setView(latLng(city()),11.5);await loadParkings();
 }
 function parkingRow(p){
-  return `<div class="row"><div><b class="rowTitle">${esc(parkingName(p))}</b><small>${esc(typeLabel(p))}${p.distance_m!=null?' · '+esc(fmtDistance(p.distance_m)):''}</small><small>${esc(priceText(p))}</small><button class="ghost" data-detail="${esc(p.id)}">${esc(t('details'))}</button></div><span class="labelPill">P</span></div>`;
+  const place=mapScope==='country'?(p.city||cities.find(c=>c.id===p.city_id)?.name||''):'';
+  return `<div class="row interactiveRow"><div><b class="rowTitle">${esc(parkingName(p))}</b><small>${esc(typeLabel(p))}${place?' · '+esc(place):''}${p.distance_m!=null?' · '+esc(fmtDistance(p.distance_m)):''}</small><small>${esc(priceText(p))}</small><button class="ghost" data-detail="${esc(p.id)}">${esc(t('details'))}</button></div>${pricePill(p)}</div>`;
 }
 function renderHome(){
   if(!cities.length)return;
@@ -209,7 +280,7 @@ function renderChoices(){
   $('nearbyList').innerHTML=ranked.length>2?`<h3>${esc(t('alternatives'))}</h3><div class="card flat">${ranked.slice(2).map(parkingRow).join('')}</div>`:ranked.length?'':`<p>${esc(t('noResults'))}</p>`;
 }
 function openDetail(id){
-  selectedParking=nearby.find(p=>String(p.id)===id)||parkings.find(p=>String(p.id)===id);
+  selectedParking=nearby.find(p=>String(p.id)===id)||parkings.find(p=>String(p.id)===id)||countryParkings.find(p=>String(p.id)===id);
   if(!selectedParking)return;renderDetail();go('detail');
 }
 function renderDetail(){
@@ -232,17 +303,38 @@ function ensureMap(id,center,zoom=15){
 }
 function addPoint(id,p,kind='parking',title=''){
   if(!maps[id]||!isPoint(point(p)))return null;
-  const html=kind==='car'?`<div class="carIcon">${esc(t('carMarker'))}</div>`:kind==='goal'?'<div class="goalIcon"></div>':`<div class="parkingIcon ${p.parking_type==='park_and_ride'?'pr':['underground','multi_storey'].includes(p.parking_type)?'structured':''}">P</div>`;
-  const marker=L.marker(latLng(p),{icon:L.divIcon({html,className:'',iconSize:kind==='car'?[60,28]:[28,28],iconAnchor:[14,14]}),title:title||parkingName(p)}).addTo(mapLayers[id]);
+  const label=markerPriceLabel(p);
+  const priceState=priceClass(p);
+  const pulse=recentPriceUpdates.has(String(p.id))?' pricePulse':'';
+  const html=kind==='car'?`<div class="carIcon">${esc(t('carMarker'))}</div>`:kind==='goal'?'<div class="goalIcon"></div>':`<div class="parkingIcon ${p.parking_type==='park_and_ride'?'pr':['underground','multi_storey'].includes(p.parking_type)?'structured':''} price-${priceState}${pulse}">${esc(label)}</div>`;
+  const size=kind==='car'?[60,28]:kind==='goal'?[24,24]:[64,32];
+  const marker=L.marker(latLng(p),{icon:L.divIcon({html,className:'',iconSize:size,iconAnchor:[size[0]/2,size[1]/2]}),title:title||parkingName(p)}).addTo(mapLayers[id]);
   return marker;
+}
+function popupForParking(p){
+  const div=document.createElement('div'),label=document.createElement('b'),price=document.createElement('div'),status=document.createElement('small'),button=document.createElement('button');
+  label.textContent=parkingName(p);price.className='popupPrice';price.textContent=priceText(p);status.textContent=priceStatusText(p);button.className='ghost';button.textContent=t('details');button.addEventListener('click',()=>openDetail(String(p.id)));
+  div.append(label,price,status,button);return div;
 }
 function renderMarkers(){
   if(!maps.mapbox)return;mapLayers.mapbox.clearLayers();
-  parkings.filter(p=>currentFilter==='all'||(currentFilter==='structured'?['underground','multi_storey'].includes(p.parking_type):p.parking_type===currentFilter)).forEach(p=>{
-    const marker=addPoint('mapbox',p);if(!marker)return;
-    const div=document.createElement('div'),label=document.createElement('b'),button=document.createElement('button');label.textContent=parkingName(p);button.className='ghost';button.textContent=t('details');button.addEventListener('click',()=>openDetail(String(p.id)));div.append(label,document.createElement('br'),button);marker.bindPopup(div);
-  });
+  const rows=filteredMapRows();
+  if(mapScope==='country'){
+    const renderer=maps.mapbox._parkbuddyCanvas||(maps.mapbox._parkbuddyCanvas=L.canvas({padding:.5}));
+    rows.forEach(p=>{
+      if(!isPoint(point(p)))return;
+      const cls=priceClass(p);
+      const color=cls==='current'?'#6d8cff':cls==='free'?'#28efb8':cls==='review'?'#ffc451':'#71868c';
+      const marker=L.circleMarker(latLng(p),{renderer,radius:5,weight:1,color,fillColor:color,fillOpacity:.82}).addTo(mapLayers.mapbox);
+      marker.bindPopup(()=>popupForParking(p));
+    });
+  }else{
+    rows.forEach(p=>{
+      const marker=addPoint('mapbox',p);if(!marker)return;marker.bindPopup(()=>popupForParking(p));
+    });
+  }
   if(userPosition)L.circleMarker(latLng(userPosition),{radius:7,color:'#fff',weight:3,fillColor:'#536fee',fillOpacity:1}).addTo(mapLayers.mapbox);
+  renderExploreSummary();
 }
 async function geo(){
   if(!navigator.geolocation)throw new Error('geoUnavailable');
@@ -261,7 +353,7 @@ async function startRoute(target,mode='driving',origin=null,forCar=false){
     if(req!==routeRequest)return;
     const route=data.route;if(!validRoute(route))throw new Error('routeError');
     routeContext.summary={duration:route.duration,distance:route.distance};
-    if(map&&mapLayers.routeMap){const line=L.geoJSON({type:'Feature',properties:{},geometry:route.geometry},{style:{color:mode==='walking'?'#008565':'#526ff1',weight:5}}).addTo(mapLayers.routeMap);
+    if(map&&mapLayers.routeMap){const line=L.geoJSON({type:'Feature',properties:{},geometry:route.geometry},{style:{color:mode==='walking'?'#008565':'#526ff1',weight:5,dashArray:'14 10',className:'routeAnimated'}}).addTo(mapLayers.routeMap);
     map.fitBounds(line.getBounds().extend(latLng(start)).extend(latLng(target)),{padding:[28,28],maxZoom:16});}
     $('routeInfo').textContent=t('routeSummary',{time:t('minutes',{n:Math.max(1,Math.ceil(route.duration/60))}),distance:fmtDistance(route.distance)});
   }catch(e){if(req===routeRequest){routeContext.error=['geoDenied','geoTimeout','geoUnavailable'].includes(e.message)?e.message:'routeError';renderRouteText();}}
@@ -331,11 +423,15 @@ function patchLivePrice(row){
   };
   const apply=p=>String(p.id)===String(row.parking_id)?{...p,...patch}:p;
   const homeHit=parkings.some(p=>String(p.id)===String(row.parking_id));
+  const countryHit=countryParkings.some(p=>String(p.id)===String(row.parking_id));
   const nearbyHit=nearby.some(p=>String(p.id)===String(row.parking_id));
   if(homeHit)parkings=parkings.map(apply);
+  if(countryHit)countryParkings=countryParkings.map(apply);
   if(nearbyHit)nearby=nearby.map(apply);
+  recentPriceUpdates.add(String(row.parking_id));setTimeout(()=>recentPriceUpdates.delete(String(row.parking_id)),1800);
   if(selectedParking&&String(selectedParking.id)===String(row.parking_id))selectedParking=apply(selectedParking);
-  if(homeHit){renderHome();renderMarkers();syncProfile();}
+  if(homeHit){renderHome();syncProfile();}
+  if((mapScope==='city'&&homeHit)||(mapScope==='country'&&countryHit)){renderMarkers();renderExploreList();}
   if(nearbyHit&&destination)renderChoices();
   if(selectedParking&&String(selectedParking.id)===String(row.parking_id))renderDetail();
 }
@@ -361,14 +457,16 @@ async function startPriceRealtime(){
   setInterval(()=>{if(!document.hidden)void refreshPricesOnly();},600000);
 }
 
-const actions={useMapCenter:()=>{const center=maps.carMap?.getCenter();if(picking&&center){pickedPoint={lat:center.lat,lon:center.lng};renderPickedPoint();}},back,locate,saveGPS,pickCar:()=>pickCar(),cancelPick:()=>{picking=false;pickedPoint=null;renderCar();},saveSelected:()=>pickedPoint?savePoint(pickedPoint,t('savedCar')):toast(t('pickRequired')),deleteCar,reloadCity:loadParkings,retryNearby:()=>loadNearby(),findCar:()=>{const c=getCar();if(c&&!c.deleted)void startRoute(c,'walking',null,true);},drive:()=>{if(selectedParking)void startRoute({...point(selectedParking),name:parkingName(selectedParking)},'driving');},walkToGoal:()=>{if(destination&&selectedParking)void startRoute(destination,'walking',point(selectedParking));},toggleTheme:()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'),reset:()=>{if(!confirm(t('resetConfirm')))return;settings={...defaults};for(const[key,storageKey]of Object.entries({theme:'theme',pref:'pref',maxWalk:'max_walk',budget:'budget',vehicle:'vehicle'}))persist('parkbuddy_'+storageKey,settings[key]);syncProfile();applyTheme();renderChoices();toast(t('saved'));}};
+const actions={loadMoreParkings:()=>{exploreListLimit+=40;renderExploreList();},useMapCenter:()=>{const center=maps.carMap?.getCenter();if(picking&&center){pickedPoint={lat:center.lat,lon:center.lng};renderPickedPoint();}},back,locate,saveGPS,pickCar:()=>pickCar(),cancelPick:()=>{picking=false;pickedPoint=null;renderCar();},saveSelected:()=>pickedPoint?savePoint(pickedPoint,t('savedCar')):toast(t('pickRequired')),deleteCar,reloadCity:loadParkings,retryNearby:()=>loadNearby(),findCar:()=>{const c=getCar();if(c&&!c.deleted)void startRoute(c,'walking',null,true);},drive:()=>{if(selectedParking)void startRoute({...point(selectedParking),name:parkingName(selectedParking)},'driving');},walkToGoal:()=>{if(destination&&selectedParking)void startRoute(destination,'walking',point(selectedParking));},toggleTheme:()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'),reset:()=>{if(!confirm(t('resetConfirm')))return;settings={...defaults};for(const[key,storageKey]of Object.entries({theme:'theme',pref:'pref',maxWalk:'max_walk',budget:'budget',vehicle:'vehicle'}))persist('parkbuddy_'+storageKey,settings[key]);syncProfile();applyTheme();renderChoices();toast(t('saved'));}};
 function setTheme(value){settings.theme=value;persist('parkbuddy_theme',value);applyTheme();}
 document.addEventListener('click',e=>{
   const button=e.target.closest('button');if(!button||button.disabled)return;
   if(button.dataset.place!==undefined)void selectPlace(Number(button.dataset.place));
   else if(button.dataset.go)go(button.dataset.go);
   else if(button.dataset.detail)openDetail(button.dataset.detail);
-  else if(button.dataset.filter){currentFilter=button.dataset.filter;document.querySelectorAll('[data-filter]').forEach(b=>{b.classList.toggle('on',b===button);b.setAttribute('aria-pressed',String(b===button));});renderMarkers();}
+  else if(button.dataset.mapScope)void setMapScope(button.dataset.mapScope);
+  else if(button.dataset.filter){currentFilter=button.dataset.filter;exploreListLimit=40;document.querySelectorAll('[data-filter]').forEach(b=>{b.classList.toggle('on',b===button);b.setAttribute('aria-pressed',String(b===button));});renderMarkers();renderExploreList();}
+  else if(button.dataset.priceFilter){mapPriceFilter=button.dataset.priceFilter;exploreListLimit=40;document.querySelectorAll('[data-price-filter]').forEach(b=>{const on=b===button;b.classList.toggle('on',on);b.setAttribute('aria-pressed',String(on));});renderMarkers();renderExploreList();}
   else if(button.dataset.themeChoice)setTheme(button.dataset.themeChoice);
   else if(actions[button.dataset.action])void actions[button.dataset.action]();
 });
