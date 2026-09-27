@@ -8,9 +8,9 @@
 <meta name="description" content="ParkBuddy Poland — znajdź parking i wróć do swojego auta.">
 <title>ParkBuddy Poland</title>
 <link rel="stylesheet" href="assets/vendor/leaflet.css">
-<link rel="stylesheet" href="assets/styles.css?v=rc5.1">
+<link rel="stylesheet" href="assets/styles.css?v=rc6">
 <script defer src="assets/vendor/leaflet.js"></script>
-<script type="module" src="assets/app.mjs?v=rc5.1"></script>
+<script type="module" src="assets/app.mjs?v=rc6"></script>
 </head>
 <body>
 <main class="app">
@@ -24,8 +24,14 @@
 <div class="sectionhead"><h3 data-i18n="cityOptions"></h3><small id="parkingCount"></small></div><p class="helper" data-i18n="homeHint"></p><p id="homeCacheNotice" class="helper" role="status"></p><div id="homeParkingList" class="card flat" aria-live="polite"></div>
 </section>
 <section id="explore" class="screen" aria-labelledby="exploreTitle">
-<div class="head"><h2 id="exploreTitle"></h2></div><div class="chips filters"><button class="chip on" data-filter="all" data-i18n="all" aria-pressed="true"></button><button class="chip" data-filter="park_and_ride" aria-pressed="false">P+R</button><button class="chip" data-filter="structured" data-i18n="structured" aria-pressed="false"></button><button class="chip" data-filter="surface" data-i18n="surface" aria-pressed="false"></button></div>
-<div class="mapwrap"><div id="mapbox" class="map" data-label="mapLabel"></div><p class="mapMessage" id="mapboxMessage" role="status" hidden></p></div><label class="fieldlabel" for="exploreQ" data-i18n="destination"></label><form id="exploreSearch" class="search" role="search"><input id="exploreQ" class="input" maxlength="200" data-placeholder="searchPlaceholder" required><button type="submit" class="primary" data-label="search">→</button></form><div data-search-status class="inlineStatus" role="status"></div><div id="exploreSearchResults" class="searchResults" aria-live="polite"></div>
+<div class="head"><h2 id="exploreTitle"></h2></div>
+<div class="chips scopeChips"><button class="chip on" data-map-scope="city" data-i18n="scopeCity" aria-pressed="true"></button><button class="chip" data-map-scope="country" data-i18n="scopePoland" aria-pressed="false"></button></div>
+<div class="chips filters"><button class="chip on" data-filter="all" data-i18n="all" aria-pressed="true"></button><button class="chip" data-filter="park_and_ride" aria-pressed="false">P+R</button><button class="chip" data-filter="structured" data-i18n="structured" aria-pressed="false"></button><button class="chip" data-filter="surface" data-i18n="surface" aria-pressed="false"></button></div>
+<div class="chips priceFilters"><button class="chip on" data-price-filter="all" data-i18n="priceFilterAll" aria-pressed="true"></button><button class="chip" data-price-filter="current" data-i18n="priceFilterCurrent" aria-pressed="false"></button><button class="chip" data-price-filter="free" data-i18n="priceFilterFree" aria-pressed="false"></button><button class="chip" data-price-filter="unknown" data-i18n="priceFilterUnknown" aria-pressed="false"></button></div>
+<div class="mapwrap animatedMap"><div id="mapbox" class="map" data-label="mapLabel"></div><p class="mapMessage" id="mapboxMessage" role="status" hidden></p></div>
+<div id="exploreStats" class="mapStats" role="status"></div>
+<label class="fieldlabel" for="exploreQ" data-i18n="destination"></label><form id="exploreSearch" class="search" role="search"><input id="exploreQ" class="input" maxlength="200" data-placeholder="searchPlaceholder" required><button type="submit" class="primary" data-label="search">→</button></form><div data-search-status class="inlineStatus" role="status"></div><div id="exploreSearchResults" class="searchResults" aria-live="polite"></div>
+<div class="sectionhead"><h3 data-i18n="allParkings"></h3><small id="exploreListCount"></small></div><div id="exploreParkingList" class="card flat parkingBrowseList" aria-live="polite"></div><button id="loadMoreParkings" class="ghost full" data-action="loadMoreParkings" data-i18n="loadMore" hidden></button>
 </section>
 <section id="choices" class="screen" aria-labelledby="choicesTitle">
 <div class="head"><button class="back" data-action="back" data-label="back">‹</button><h2 id="choicesTitle" data-i18n="planTitle"></h2></div><div class="card flat"><b id="choiceDest"></b><p class="helper" data-i18n="noLive"></p></div><div id="choicesNotice" class="inlineStatus" role="status"></div><div id="decisionPlan"></div><div id="nearbyList"></div>
