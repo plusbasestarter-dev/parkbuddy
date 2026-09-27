@@ -1,6 +1,6 @@
 # ParkBuddy Poland
 
-Parking search, driving route previews and walking routes back to a saved car across 18 Polish cities. Languages: Polish, Turkish and English. Current release candidate: **1.0.0-rc5.1**.
+Parking search, driving route previews and walking routes back to a saved car across 18 Polish cities. Languages: Polish, Turkish and English. Current release candidate: **1.0.0-rc6**.
 
 ## Application
 
@@ -34,3 +34,8 @@ RC5 adds a scheduled price-source monitor, tariff history, source-change detecti
 ### Duration tariffs
 
 RC5.1 preserves and displays non-hourly verified tariffs without inventing hourly equivalents. Duration tariffs are rendered using their verified period (for example, 30 PLN / 24 h or 3.50 PLN / 30 min), while hourly budget and cheapest-price ranking continue to use only directly verified hourly prices.
+
+
+## RC6 all-parking map
+
+RC6 adds a Poland-wide browse mode for every parking location, live/current price filters, free/unknown price filters, lightweight canvas rendering for the nationwide map, paged browse rows, price-labelled city markers, live price-update pulses, animated route previews, and reduced-motion accessibility. The existing city workflow remains the default so destination search and routing stay fast.
