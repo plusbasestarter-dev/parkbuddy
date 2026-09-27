@@ -1,6 +1,6 @@
 # ParkBuddy Poland
 
-Parking search, driving route previews and walking routes back to a saved car across 18 Polish cities. Languages: Polish, Turkish and English. Current release candidate: **1.0.0-rc5**.
+Parking search, driving route previews and walking routes back to a saved car across 18 Polish cities. Languages: Polish, Turkish and English. Current release candidate: **1.0.0-rc5.1**.
 
 ## Application
 
@@ -29,3 +29,8 @@ Private parking state uses a per-device random credential, sent in a header and 
 ## RC5 price freshness
 
 RC5 adds a scheduled price-source monitor, tariff history, source-change detection, freshness/confidence metadata, a manual-review queue, and a read-only Supabase Realtime feed for live price changes. Official sources are checked daily, operator sources every six hours, and community sources on a weekly cadence. A changed source never silently overwrites a tariff: the existing price is re-confirmed from source evidence or moved to review so it cannot distort price ranking.
+
+
+### Duration tariffs
+
+RC5.1 preserves and displays non-hourly verified tariffs without inventing hourly equivalents. Duration tariffs are rendered using their verified period (for example, 30 PLN / 24 h or 3.50 PLN / 30 min), while hourly budget and cheapest-price ranking continue to use only directly verified hourly prices.
