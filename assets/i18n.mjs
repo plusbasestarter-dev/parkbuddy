@@ -130,7 +130,19 @@ const rows = [
 ['carMarker','Auto','Araç','Car'],
 ['priceCoverage','Potwierdzone ceny: {known} z {total} parkingów.','Fiyatı bilinen: {total} park içinde {known}.','Known prices: {known} of {total} parking locations.'],
 ['walkOverLimit','Spacer dłuższy niż preferowany limit','Yürüyüş, tercih ettiğin sürenin üstünde','Walk exceeds your preferred limit'],
-['localCache','Wyświetlam ostatnio zapisane parkingi.','Son kaydedilen park listesi gösteriliyor.','Showing the last saved parking list.']
+['localCache','Wyświetlam ostatnio zapisane parkingi.','Son kaydedilen park listesi gösteriliyor.','Showing the last saved parking list.'],
+['scopeCity','To miasto','Bu şehir','This city'],
+['scopePoland','Cała Polska','Tüm Polonya','All Poland'],
+['countryTitle','Parkingi w całej Polsce','Polonya’daki tüm parklar','Parking across Poland'],
+['priceFilterAll','Wszystkie ceny','Tüm fiyatlar','All prices'],
+['priceFilterCurrent','Aktualna cena','Güncel fiyat','Current price'],
+['priceFilterFree','0 zł / bezpłatne','0 zł / ücretsiz','0 PLN / free'],
+['priceFilterUnknown','Cena nieznana','Fiyat bilinmiyor','Unknown price'],
+['allParkings','Wszystkie parkingi','Tüm parklar','All parking locations'],
+['loadMore','Pokaż więcej','Daha fazla göster','Show more'],
+['countryLoading','Ładowanie parkingów z całej Polski…','Polonya genelindeki parklar yükleniyor…','Loading parking across Poland…'],
+['mapStats','Widoczne: {shown} · Wszystkie: {total} · Aktualna cena: {priced}','Gösterilen: {shown} · Toplam: {total} · Güncel fiyatlı: {priced}','Shown: {shown} · Total: {total} · Current price: {priced}'],
+['freeShort','0 zł','0 zł','0 PLN']
 ];
 export const dictionaries = Object.fromEntries(['pl','tr','en'].map((lang,i)=>[lang,Object.fromEntries(rows.map(row=>[row[0],row[i+1]]))]));
 export function translator(language) { return (key,values={}) => (dictionaries[language]?.[key] ?? dictionaries.en[key] ?? key).replace(/\{(\w+)\}/g,(_,k)=>String(values[k] ?? '')); }
