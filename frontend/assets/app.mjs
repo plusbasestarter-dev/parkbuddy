@@ -1,7 +1,9 @@
-import {VERSION, CAR_KEY, normalizePoint, validRows, validRoute, isPoint, isGeneratedName, escapeHTML as esc, parseJSON, readCar, writeCar, nextRevision, reconcileCar, ownerToken, knownPrice, walkingMinutes, distanceMeters, rankParkings, navigationURL} from './core.mjs?v=rc4';
-import {translator} from './i18n.mjs?v=rc4';
+import {VERSION, CAR_KEY, normalizePoint, validRows, validRoute, isPoint, isGeneratedName, escapeHTML as esc, parseJSON, readCar, writeCar, nextRevision, reconcileCar, ownerToken, knownPrice, walkingMinutes, distanceMeters, rankParkings, navigationURL} from './core.mjs?v=rc5';
+import {translator} from './i18n.mjs?v=rc5';
 
 const API='https://oespoljjeslpsnhjwsra.supabase.co/functions/v1/parkbuddy-api';
+const SUPABASE_URL='https://oespoljjeslpsnhjwsra.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY='sb_publishable_tf0TtF1VL4UtT_O7pDJl6w_wluW08sN';
 const $=id=>document.getElementById(id);
 const stored=(key,fallback)=>{try{return localStorage.getItem(key) ?? fallback;}catch{return fallback;}};
 const defaults={theme:'system',pref:'balanced',maxWalk:10,budget:0,vehicle:'standard'};
@@ -26,7 +28,22 @@ const typeLabel=p=>t(['surface','underground','multi_storey','municipal','park_a
 function parkingName(p){return !p.name||isGeneratedName(p.name)?`${typeLabel(p)} · ${p.city||cities.find(c=>c.id===p.city_id)?.name||city().name}`:p.name;}
 function fmtDistance(m){return m==null||!Number.isFinite(Number(m))?'—':Number(m)<1000?`${Math.round(m)} m`:`${(m/1000).toLocaleString(language,{maximumFractionDigits:1})} km`;}
 function fmtWalk(p){const n=walkingMinutes(p);return n===null?t('walkUnknown'):t('minutes',{n});}
-function priceText(p){const n=knownPrice(p);return n===null?t('priceUnknown'):`${n.toLocaleString(language)} ${p.currency||'PLN'} / h`;}
+function rawPrice(p){if(p?.price_per_hour==null||p.price_per_hour==='')return null;const n=Number(p.price_per_hour);return Number.isFinite(n)&&n>=0?n:null;}
+function priceStatusText(p){
+  if(rawPrice(p)===null)return t('priceUnknown');
+  const status=String(p.price_freshness_status||'');
+  const level=String(p.price_verification_level||'');
+  const key=status==='review'||status==='unknown'?'priceNeedsReview':status==='stale'||status==='error'?'priceStale':level==='official'?'priceOfficial':level==='operator'?'priceOperator':'priceCommunity';
+  const stamp=p.price_last_checked_at||p.price_verified_at;
+  if(!stamp)return t(key);
+  const d=new Date(stamp);return Number.isFinite(d.getTime())?`${t(key)} · ${d.toLocaleDateString(language)}`:t(key);
+}
+function priceText(p){
+  const n=rawPrice(p);if(n===null)return t('priceUnknown');
+  const base=`${n.toLocaleString(language)} ${p.currency||'PLN'} / h`;
+  const status=String(p.price_freshness_status||'');
+  return status==='review'||status==='unknown'?`${base} · ${t('priceNeedsReview')}`:status==='stale'||status==='error'?`${base} · ${t('priceStale')}`:base;
+}
 function toast(message){$('toast').textContent=message;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),4200);}
 function persist(key,value){try{localStorage.setItem(key,String(value));return true;}catch{toast(t('storageError'));return false;}}
 function getCar(){try{return readCar(localStorage);}catch{return null;}}
@@ -187,7 +204,7 @@ function openDetail(id){
 }
 function renderDetail(){
   const p=selectedParking;if(!p)return;
-  $('detailContent').innerHTML=`<div class="card featured"><div class="eyebrow">${esc(typeLabel(p))}</div><h2>${esc(parkingName(p))}</h2></div>${destination&&p.distance_m!=null?metrics(p):`<p class="helper">${esc(t('setGoalForWalk'))}</p>`}<div class="card flat"><b>${esc(t('price'))}</b><p>${esc(priceText(p))}</p><p class="helper">${esc(t('priceHint'))}</p><p class="helper">${esc(t('noLive'))}</p><p class="helper">${esc(t('hours'))}</p>${settings.vehicle==='large'?`<p class="helper warning">${esc(t('largeHint'))}</p>`:''}</div><div class="routeActions"><button class="primary full" data-action="drive">${esc(t('drive'))}</button>${destination?`<button class="outline full" data-action="walkToGoal">${esc(t('walkToGoal'))}</button>`:''}<a class="ghost buttonLink" href="${esc(navigationURL(point(p),'driving'))}" target="_blank" rel="noopener noreferrer">${esc(t('external'))}</a></div>`;
+  $('detailContent').innerHTML=`<div class="card featured"><div class="eyebrow">${esc(typeLabel(p))}</div><h2>${esc(parkingName(p))}</h2></div>${destination&&p.distance_m!=null?metrics(p):`<p class="helper">${esc(t('setGoalForWalk'))}</p>`}<div class="card flat"><b>${esc(t('price'))}</b><p>${esc(priceText(p))}</p><p class="helper">${esc(priceStatusText(p))}</p><p class="helper">${esc(t('priceHint'))}</p><p class="helper">${esc(t('noLive'))}</p><p class="helper">${esc(t('hours'))}</p>${settings.vehicle==='large'?`<p class="helper warning">${esc(t('largeHint'))}</p>`:''}</div><div class="routeActions"><button class="primary full" data-action="drive">${esc(t('drive'))}</button>${destination?`<button class="outline full" data-action="walkToGoal">${esc(t('walkToGoal'))}</button>`:''}<a class="ghost buttonLink" href="${esc(navigationURL(point(p),'driving'))}" target="_blank" rel="noopener noreferrer">${esc(t('external'))}</a></div>`;
 }
 
 function mapMessage(id,show){const el=$(id+'Message');if(el){el.hidden=!show;el.textContent=show?t('mapError'):'';}}
@@ -293,6 +310,45 @@ async function syncCar(){
   })();return syncPromise;
 }
 
+function patchLivePrice(row){
+  if(!row?.parking_id)return;
+  const patch={
+    price_per_hour:row.price_per_hour,currency:row.currency,
+    price_freshness_status:row.freshness_status,price_verification_level:row.verification_level,
+    price_verified_at:row.verified_at,price_last_checked_at:row.last_checked_at,price_next_check_at:row.next_check_at
+  };
+  const apply=p=>String(p.id)===String(row.parking_id)?{...p,...patch}:p;
+  const homeHit=parkings.some(p=>String(p.id)===String(row.parking_id));
+  const nearbyHit=nearby.some(p=>String(p.id)===String(row.parking_id));
+  if(homeHit)parkings=parkings.map(apply);
+  if(nearbyHit)nearby=nearby.map(apply);
+  if(selectedParking&&String(selectedParking.id)===String(row.parking_id))selectedParking=apply(selectedParking);
+  if(homeHit){renderHome();renderMarkers();syncProfile();}
+  if(nearbyHit&&destination)renderChoices();
+  if(selectedParking&&String(selectedParking.id)===String(row.parking_id))renderDetail();
+}
+async function refreshPricesOnly(){
+  if(!navigator.onLine)return;
+  try{
+    const data=await api('official-parking',{city_id:currentCityId});
+    const fresh=validRows(data.parkings),byId=new Map(fresh.map(p=>[String(p.id),p]));
+    parkings=fresh;
+    nearby=nearby.map(p=>({...p,...(byId.get(String(p.id))||{})}));
+    if(selectedParking&&byId.has(String(selectedParking.id)))selectedParking={...selectedParking,...byId.get(String(selectedParking.id))};
+    renderHome();renderMarkers();syncProfile();if(destination)renderChoices();if(selectedParking)renderDetail();
+  }catch{}
+}
+async function startPriceRealtime(){
+  try{
+    const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2.116.0?bundle');
+    const client=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+    client.channel('parkbuddy-price-live')
+      .on('postgres_changes',{event:'*',schema:'public',table:'parking_price_live'},payload=>patchLivePrice(payload.new))
+      .subscribe();
+  }catch{}
+  setInterval(()=>{if(!document.hidden)void refreshPricesOnly();},600000);
+}
+
 const actions={useMapCenter:()=>{const center=maps.carMap?.getCenter();if(picking&&center){pickedPoint={lat:center.lat,lon:center.lng};renderPickedPoint();}},back,locate,saveGPS,pickCar:()=>pickCar(),cancelPick:()=>{picking=false;pickedPoint=null;renderCar();},saveSelected:()=>pickedPoint?savePoint(pickedPoint,t('savedCar')):toast(t('pickRequired')),deleteCar,reloadCity:loadParkings,retryNearby:()=>loadNearby(),findCar:()=>{const c=getCar();if(c&&!c.deleted)void startRoute(c,'walking',null,true);},drive:()=>{if(selectedParking)void startRoute({...point(selectedParking),name:parkingName(selectedParking)},'driving');},walkToGoal:()=>{if(destination&&selectedParking)void startRoute(destination,'walking',point(selectedParking));},toggleTheme:()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'),reset:()=>{if(!confirm(t('resetConfirm')))return;settings={...defaults};for(const[key,storageKey]of Object.entries({theme:'theme',pref:'pref',maxWalk:'max_walk',budget:'budget',vehicle:'vehicle'}))persist('parkbuddy_'+storageKey,settings[key]);syncProfile();applyTheme();renderChoices();toast(t('saved'));}};
 function setTheme(value){settings.theme=value;persist('parkbuddy_theme',value);applyTheme();}
 document.addEventListener('click',e=>{
@@ -310,8 +366,8 @@ for(const id of ['headerLanguage','languageSelect'])$(id).addEventListener('chan
 for(const[id,key,storageKey]of [['prefSelect','pref','pref'],['walkSelect','maxWalk','max_walk'],['budgetSelect','budget','budget'],['vehicleSelect','vehicle','vehicle']])$(id).addEventListener('change',e=>{settings[key]=['maxWalk','budget'].includes(key)?Number(e.target.value):e.target.value;persist('parkbuddy_'+storageKey,settings[key]);renderChoices();if(selectedParking)renderDetail();toast(t('saved'));});
 matchMedia('(prefers-color-scheme: light)').addEventListener('change',()=>{if(settings.theme==='system')applyTheme();});
 window.addEventListener('storage',e=>{if(e.key===CAR_KEY){if(currentScreen==='car')renderCar();void syncCar();}});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)void syncCar();});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){void syncCar();void refreshPricesOnly();}});
 function connectionChanged(){$('connectionNotice').hidden=navigator.onLine;if(navigator.onLine)void syncCar();}
 window.addEventListener('online',connectionChanged);window.addEventListener('offline',connectionChanged);
-$('version').textContent=VERSION;applyLanguage();connectionChanged();void loadCities();
+$('version').textContent=VERSION;applyLanguage();connectionChanged();void loadCities();if(window.location?.protocol==='https:')void startPriceRealtime();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
