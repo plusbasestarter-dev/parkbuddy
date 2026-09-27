@@ -1,4 +1,4 @@
-export const VERSION = '1.0.0-rc4';
+export const VERSION = '1.0.0-rc5';
 export const CAR_KEY = 'parkbuddy_car_v2';
 export const TOKEN_KEY = 'parkbuddy_owner_token';
 export const isPoint = p => p && Number.isFinite(p.lat) && Number.isFinite(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180;
@@ -58,6 +58,7 @@ export function ownerToken(storage, cryptoAPI) {
 }
 export function knownPrice(p) {
   if (p.price_per_hour == null || p.price_per_hour === '') return null;
+  if (['unknown','stale','review','error'].includes(String(p.price_freshness_status || ''))) return null;
   const n = Number(p.price_per_hour);
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
