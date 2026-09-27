@@ -54,3 +54,11 @@ test('route details and external walking link remain usable when map library is 
 test('corrupted caches and unsupported saved settings fall back without crashing',async t=>{
   const app=create(t,{stored:{parkbuddy_theme:'invalid',parkbuddy_cities_cache:'{}',parkbuddy_parkings_warszawa:'{"bad":true}',parkbuddy_language:'tr'},fetcher:()=>{throw Error('Offline')}});await settle(()=>app.document.querySelector('[data-action=reloadCity]'));assert.equal(app.document.documentElement.lang,'tr');assert.equal(app.document.documentElement.dataset.theme,'dark');app.change('headerLanguage','en');assert.ok(app.document.querySelector('[data-action=reloadCity]'));
 });
+
+test('verified duration price is displayed without inventing an hourly equivalent',async t=>{
+  const daily={...parking(),price_per_hour:null,price_tariff_kind:'duration',price_primary_amount:30,price_primary_duration_minutes:1440,price_freshness_status:'current',price_verification_level:'operator'};
+  const app=create(t,{fetcher:(action)=>action==='official-parking'?{parkings:[daily]}:undefined});
+  await settle(()=>app.document.getElementById('homeParkingList').textContent.includes('30'));
+  assert.ok(app.document.getElementById('homeParkingList').textContent.includes('30 PLN / 24 h'));
+  assert.ok(!app.document.getElementById('homeParkingList').textContent.includes('Price unconfirmed'));
+});
