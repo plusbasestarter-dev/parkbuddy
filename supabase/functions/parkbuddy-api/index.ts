@@ -199,7 +199,7 @@ Deno.serve(async (req:Request)=>{
     const supabaseUrl=Deno.env.get('SUPABASE_URL')
     if(!secret||!supabaseUrl)return json({error:'Server unavailable'},503)
     const db=createClient(supabaseUrl,secret,{auth:{persistSession:false,autoRefreshToken:false}})
-    if(action==='health'&&req.method==='GET')return json({ok:true,service:'parkbuddy-poland-edge',version:'1.0.0-rc5.1-price-engine'})
+    if(action==='health'&&req.method==='GET')return json({ok:true,service:'parkbuddy-poland-edge',version:'1.0.0-rc6-all-parking-map'})
 
     // Location ownership is proven with an unguessable bearer credential in a header.
     // URL/body device IDs are never an authority and are no longer accepted.
@@ -236,6 +236,31 @@ Deno.serve(async (req:Request)=>{
       const {data,error}=await db.from('parking_locations').select('id,name,city,city_id,parking_type,currency,price_per_hour,lat,lon,capacity,source_updated_at,pricing_status,price_source_url,price_verified_at,price_verification_level,price_freshness_status,price_confidence_score,price_last_checked_at,price_next_check_at,price_tariff_kind,price_primary_amount,price_primary_duration_minutes,price_note').eq('city_id',cityId).order('name')
       if(error)return json({error:'Parking locations unavailable'},503)
       return json({city_id:cityId,parkings:data||[]})
+    }
+    if(action==='parking-map'&&req.method==='GET'){
+      const scope=url.searchParams.get('scope')==='country'?'country':'city'
+      const cityId=(url.searchParams.get('city_id')||'warszawa').trim()
+      const requestedLimit=bounded(numberParam(url.searchParams,'limit'),1,6000,6000)
+      const fields='id,name,city,city_id,parking_type,currency,price_per_hour,lat,lon,capacity,pricing_status,price_source_url,price_verified_at,price_verification_level,price_freshness_status,price_confidence_score,price_last_checked_at,price_next_check_at,price_tariff_kind,price_primary_amount,price_primary_duration_minutes,price_note'
+      const rows:any[]=[]
+      const pageSize=1000
+      for(let from=0;from<requestedLimit;from+=pageSize){
+        const to=Math.min(from+pageSize-1,requestedLimit-1)
+        let query=db.from('parking_locations').select(fields).order('id').range(from,to)
+        if(scope==='city')query=query.eq('city_id',cityId)
+        const {data,error}=await query
+        if(error)return json({error:'Parking map unavailable'},503)
+        rows.push(...(data||[]))
+        if(!data||data.length<pageSize)break
+      }
+      return json({
+        scope,
+        city_id:scope==='city'?cityId:null,
+        count:rows.length,
+        current_price_count:rows.filter((p:any)=>p.price_freshness_status==='current'&&(p.price_per_hour!=null||p.price_primary_amount!=null)).length,
+        unknown_price_count:rows.filter((p:any)=>p.price_freshness_status==='unknown'||(p.price_per_hour==null&&p.price_primary_amount==null)).length,
+        parkings:rows
+      })
     }
     if(action==='search'&&req.method==='GET'){
       const q=(url.searchParams.get('q')||'').trim(),cityId=url.searchParams.get('city_id')||'warszawa'
