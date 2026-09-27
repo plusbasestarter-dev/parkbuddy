@@ -2,7 +2,7 @@
   "name": "parkbuddy-poland",
   "private": true,
   "type": "module",
-  "version": "1.0.0-rc5.1",
+  "version": "1.0.0-rc6",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "sync:frontend": "node scripts/sync-frontend.mjs",
