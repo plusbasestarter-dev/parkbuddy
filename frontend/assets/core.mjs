@@ -1,4 +1,4 @@
-export const VERSION = '1.0.0-rc5.1';
+export const VERSION = '1.0.0-rc6';
 export const CAR_KEY = 'parkbuddy_car_v2';
 export const TOKEN_KEY = 'parkbuddy_owner_token';
 export const isPoint = p => p && Number.isFinite(p.lat) && Number.isFinite(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180;
