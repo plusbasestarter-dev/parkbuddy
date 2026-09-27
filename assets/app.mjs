@@ -1,5 +1,5 @@
-import {VERSION, CAR_KEY, normalizePoint, validRows, validRoute, isPoint, isGeneratedName, escapeHTML as esc, parseJSON, readCar, writeCar, nextRevision, reconcileCar, ownerToken, knownPrice, walkingMinutes, distanceMeters, rankParkings, navigationURL} from './core.mjs?v=rc5';
-import {translator} from './i18n.mjs?v=rc5';
+import {VERSION, CAR_KEY, normalizePoint, validRows, validRoute, isPoint, isGeneratedName, escapeHTML as esc, parseJSON, readCar, writeCar, nextRevision, reconcileCar, ownerToken, knownPrice, walkingMinutes, distanceMeters, rankParkings, navigationURL} from './core.mjs?v=rc5.1';
+import {translator} from './i18n.mjs?v=rc5.1';
 
 const API='https://oespoljjeslpsnhjwsra.supabase.co/functions/v1/parkbuddy-api';
 const SUPABASE_URL='https://oespoljjeslpsnhjwsra.supabase.co';
@@ -29,8 +29,10 @@ function parkingName(p){return !p.name||isGeneratedName(p.name)?`${typeLabel(p)}
 function fmtDistance(m){return m==null||!Number.isFinite(Number(m))?'—':Number(m)<1000?`${Math.round(m)} m`:`${(m/1000).toLocaleString(language,{maximumFractionDigits:1})} km`;}
 function fmtWalk(p){const n=walkingMinutes(p);return n===null?t('walkUnknown'):t('minutes',{n});}
 function rawPrice(p){if(p?.price_per_hour==null||p.price_per_hour==='')return null;const n=Number(p.price_per_hour);return Number.isFinite(n)&&n>=0?n:null;}
+function rawPrimaryPrice(p){if(p?.price_primary_amount==null||p.price_primary_amount==='')return null;const n=Number(p.price_primary_amount);return Number.isFinite(n)&&n>=0?n:null;}
+function hasDisplayPrice(p){return rawPrice(p)!==null||rawPrimaryPrice(p)!==null;}
 function priceStatusText(p){
-  if(rawPrice(p)===null)return t('priceUnknown');
+  if(!hasDisplayPrice(p))return t('priceUnknown');
   const status=String(p.price_freshness_status||'');
   const level=String(p.price_verification_level||'');
   const key=status==='review'||status==='unknown'?'priceNeedsReview':status==='stale'||status==='error'?'priceStale':level==='official'?'priceOfficial':level==='operator'?'priceOperator':'priceCommunity';
@@ -39,8 +41,16 @@ function priceStatusText(p){
   const d=new Date(stamp);return Number.isFinite(d.getTime())?`${t(key)} · ${d.toLocaleDateString(language)}`:t(key);
 }
 function priceText(p){
-  const n=rawPrice(p);if(n===null)return t('priceUnknown');
-  const base=`${n.toLocaleString(language)} ${p.currency||'PLN'} / h`;
+  const hourly=rawPrice(p),primary=rawPrimaryPrice(p),currency=p.currency||'PLN';
+  let base='';
+  if(hourly!==null)base=`${hourly.toLocaleString(language)} ${currency} / h`;
+  else if(primary!==null){
+    const minutes=Number(p.price_primary_duration_minutes),kind=String(p.price_tariff_kind||'');
+    if(kind==='duration'&&Number.isFinite(minutes)&&minutes>0){
+      const unit=minutes%60===0?`${minutes/60} h`:`${minutes} min`;
+      base=`${primary.toLocaleString(language)} ${currency} / ${unit}`;
+    }else base=`${primary.toLocaleString(language)} ${currency}`;
+  }else return t('priceUnknown');
   const status=String(p.price_freshness_status||'');
   return status==='review'||status==='unknown'?`${base} · ${t('priceNeedsReview')}`:status==='stale'||status==='error'?`${base} · ${t('priceStale')}`:base;
 }
@@ -315,7 +325,9 @@ function patchLivePrice(row){
   const patch={
     price_per_hour:row.price_per_hour,currency:row.currency,
     price_freshness_status:row.freshness_status,price_verification_level:row.verification_level,
-    price_verified_at:row.verified_at,price_last_checked_at:row.last_checked_at,price_next_check_at:row.next_check_at
+    price_verified_at:row.verified_at,price_last_checked_at:row.last_checked_at,price_next_check_at:row.next_check_at,
+    price_tariff_kind:row.tariff_kind,price_primary_amount:row.primary_amount,
+    price_primary_duration_minutes:row.primary_duration_minutes
   };
   const apply=p=>String(p.id)===String(row.parking_id)?{...p,...patch}:p;
   const homeHit=parkings.some(p=>String(p.id)===String(row.parking_id));
