@@ -26,7 +26,7 @@ function scoreParking(p: any, radius: number) {
   const proximity = Math.max(0, 1 - distance_m / radius)
   const capacityNorm = Math.min(capacity / 500, 1)
   const verified = p.data_confidence === 'verified' ? 1 : 0
-  const priceKnown = p.price_per_hour != null ? 1 : 0
+  const priceKnown = p.price_per_hour != null && !['unknown','stale','review','error'].includes(String(p.price_freshness_status||'')) ? 1 : 0
   const decision_score = Math.round(proximity * 55 + capacityNorm * 25 + verified * 10 + priceKnown * 10)
   return {
     ...p,
@@ -199,7 +199,7 @@ Deno.serve(async (req:Request)=>{
     const supabaseUrl=Deno.env.get('SUPABASE_URL')
     if(!secret||!supabaseUrl)return json({error:'Server unavailable'},503)
     const db=createClient(supabaseUrl,secret,{auth:{persistSession:false,autoRefreshToken:false}})
-    if(action==='health'&&req.method==='GET')return json({ok:true,service:'parkbuddy-poland-edge',version:'1.0.0-rc4'})
+    if(action==='health'&&req.method==='GET')return json({ok:true,service:'parkbuddy-poland-edge',version:'1.0.0-rc5-price-engine'})
 
     // Location ownership is proven with an unguessable bearer credential in a header.
     // URL/body device IDs are never an authority and are no longer accepted.
@@ -233,7 +233,7 @@ Deno.serve(async (req:Request)=>{
     }
     if(action==='official-parking'&&req.method==='GET'){
       const cityId=url.searchParams.get('city_id')||'warszawa'
-      const {data,error}=await db.from('parking_locations').select('id,name,city,city_id,parking_type,currency,price_per_hour,lat,lon,capacity,source_updated_at').eq('city_id',cityId).order('name')
+      const {data,error}=await db.from('parking_locations').select('id,name,city,city_id,parking_type,currency,price_per_hour,lat,lon,capacity,source_updated_at,pricing_status,price_source_url,price_verified_at,price_verification_level,price_freshness_status,price_confidence_score,price_last_checked_at,price_next_check_at').eq('city_id',cityId).order('name')
       if(error)return json({error:'Parking locations unavailable'},503)
       return json({city_id:cityId,parkings:data||[]})
     }
@@ -256,7 +256,17 @@ Deno.serve(async (req:Request)=>{
       const cityId=url.searchParams.get('city_id')||null
       const {data,error}=await db.rpc('nearby_parking',{p_lat:lat,p_lon:lon,p_radius_m:radius,p_limit:limit,p_city_id:cityId})
       if(error)return json({error:'Nearby parking unavailable'},503)
-      const rows=(await addWalking(db,(data||[]).map((p:any)=>scoreParking(p,radius)),lat,lon)).sort((a:any,b:any)=>b.decision_score-a.decision_score||a.distance_m-b.distance_m)
+      const base=data||[]
+      const ids=base.map((p:any)=>String(p.id)).filter(Boolean)
+      const metaById=new Map<string,any>()
+      if(ids.length){
+        const {data:meta,error:metaError}=await db.from('parking_locations')
+          .select('id,pricing_status,price_source_url,price_verified_at,price_verification_level,price_freshness_status,price_confidence_score,price_last_checked_at,price_next_check_at')
+          .in('id',ids)
+        if(!metaError)for(const row of meta||[])metaById.set(String(row.id),row)
+      }
+      const enriched=base.map((p:any)=>({...p,...(metaById.get(String(p.id))||{})}))
+      const rows=(await addWalking(db,enriched.map((p:any)=>scoreParking(p,radius)),lat,lon)).sort((a:any,b:any)=>b.decision_score-a.decision_score||a.distance_m-b.distance_m)
       if(action==='plan')return json({primary:rows[0]||null,plan_b:rows[1]||null,alternatives:rows.slice(2),destination:{lat,lon}})
       return json({parkings:rows,city_id:cityId,destination:{lat,lon},count:rows.length})
     }
